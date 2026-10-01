@@ -451,6 +451,79 @@ class PolicyService:
             yaml_text = yaml.safe_dump(policy_doc, sort_keys=False, default_flow_style=False, indent=2)
         return await self.admin_client.put_yaml("policy", yaml_text, request_id)
 
+    def preset_mtls_ids(self, preset_name):
+        # type: (str) -> List[str]
+        required_agent_keys = ["budget-report", "budget-approval"]
+        if preset_name == "permissive":
+            required_agent_keys.append("employee-menus")
+        allowed = []
+        for agent_key in required_agent_keys:
+            agent = self.settings.agents.get(agent_key)
+            if not agent or not agent.spiffe_id:
+                raise PortalError(
+                    503,
+                    "preset_identity_missing",
+                    "Cannot apply preset because agent identity is unavailable",
+                    {"agent": agent_key},
+                )
+            allowed.append(agent.spiffe_id)
+        control_plane_id = self.settings.control_plane.spiffe_id
+        if not control_plane_id:
+            raise PortalError(
+                503,
+                "preset_identity_missing",
+                "Cannot apply preset because control-plane identity is unavailable",
+                {"agent": MGMT_PLANE_AGENT_KEY},
+            )
+        allowed.append(control_plane_id)
+        return list(dict.fromkeys(allowed))
+
+    async def apply_preset(self, preset_name, request_id):
+        # type: (str, str) -> Dict[str, Any]
+        if preset_name == "hardened":
+            preset_yaml = self.build_hardened_rbac_yaml()
+        elif preset_name == "permissive":
+            preset_yaml = self.build_permissive_rbac_yaml()
+        else:
+            raise PortalError(404, "preset_not_found", "Unknown built-in policy preset")
+
+        target_mtls_ids = self.preset_mtls_ids(preset_name)
+        previous_policy = await self.get_policy(request_id)
+        policy_result = await self.put_policy(preset_yaml, request_id)
+        try:
+            mtls_result = await self.put_mtls_policy(target_mtls_ids, request_id)
+        except PortalError as update_error:
+            rollback_doc = {
+                key: value
+                for key, value in previous_policy.items()
+                if key not in {"loaded_at", "request_count"}
+            }
+            try:
+                await self.put_policy(
+                    yaml.safe_dump(rollback_doc, sort_keys=False, default_flow_style=False, indent=2),
+                    request_id,
+                )
+            except PortalError as rollback_error:
+                raise PortalError(
+                    500,
+                    "preset_apply_and_rollback_failed",
+                    "Preset mTLS update failed and the previous policy could not be restored",
+                    {"update_error": str(update_error), "rollback_error": str(rollback_error)},
+                )
+            raise PortalError(
+                502,
+                "preset_mtls_update_failed",
+                "Preset mTLS update failed; the previous policy was restored",
+                {"detail": str(update_error)},
+            )
+        return {
+            "status": "applied",
+            "preset": preset_name,
+            "policy": policy_result,
+            "mtls": mtls_result,
+            "allowed_ids": target_mtls_ids,
+        }
+
     async def get_mtls_policy(self, request_id):
         # type: (str) -> Dict[str, Any]
         return await self.admin_client.get_json("mtls-policy", request_id)

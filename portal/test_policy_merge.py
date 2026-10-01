@@ -71,6 +71,30 @@ class TestPolicyMerge(unittest.TestCase):
             )
             self.assertNotIn("spiffe_id_prefix", google)
 
+    def test_permissive_preset_adds_employee_menus_to_mtls(self):
+        service = _make_service()
+        service.settings.agents.update(
+            {
+                key: AgentConfig(
+                    key=key,
+                    name=key,
+                    role="caller",
+                    url="",
+                    spiffe_id="spiffe://aim.microsoft.com/ests/bp/x/aid/{0}".format(key),
+                    entra_agent_id=key,
+                )
+                for key in ("budget-report", "budget-approval", "employee-menus")
+            }
+        )
+
+        permissive = service.preset_mtls_ids("permissive")
+        hardened = service.preset_mtls_ids("hardened")
+
+        self.assertIn(service.get_agent_spiffe_id("employee-menus"), permissive)
+        self.assertNotIn(service.get_agent_spiffe_id("employee-menus"), hardened)
+        self.assertIn(service.get_control_plane_spiffe_id(), permissive)
+        self.assertIn(service.get_control_plane_spiffe_id(), hardened)
+
     def test_merge_rules_drops_overlapping_broad_allow(self):
         service = _make_service()
         existing_rules = [

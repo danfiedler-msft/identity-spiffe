@@ -742,6 +742,7 @@ var state = {
   policyUpdateResult: null,
   policyConfigs: [],     // saved named configurations
   policyEditorDirty: false,
+  policyEditorPreset: null,
   // mTLS
   mtlsData: null,
   // Health
@@ -1778,12 +1779,18 @@ function previewAndPush() {
 }
 
 function doPushPolicy(yaml) {
+  var applyingPreset = state.policyEditorPreset && !state.policyEditorDirty && yaml === state.policyEditorYaml;
   state.policyEditorYaml = yaml;
-  api('/policy', { method: 'PUT', headers: { 'Content-Type': 'application/x-yaml' }, body: yaml })
+  var request = applyingPreset
+    ? api('/preset-policies/' + state.policyEditorPreset + '/apply', { method: 'POST' })
+    : api('/policy', { method: 'PUT', headers: { 'Content-Type': 'application/x-yaml' }, body: yaml });
+  request
     .then(function(d) {
-        state.policyUpdateResult = { ok: true, msg: 'Policy updated: ' + (d.old_version || '?') + ' \u2192 ' + (d.new_version || '?') };
+        var policyResult = applyingPreset ? (d.policy || {}) : d;
+        var suffix = applyingPreset ? ' and matching mTLS posture applied' : '';
+        state.policyUpdateResult = { ok: true, msg: 'Policy updated: ' + (policyResult.old_version || '?') + ' \u2192 ' + (policyResult.new_version || '?') + suffix };
         state.policyEditorDirty = false;
-        loadPolicy().then(render);
+        Promise.all([loadPolicy(), loadMtls()]).then(render);
     }).catch(function(e) { state.policyUpdateResult = { ok: false, msg: e.message }; render(); });
 }
 
@@ -1834,7 +1841,7 @@ function loadSelectedConfig() {
   // Handle built-in presets — fetch hydrated versions from server (real SPIFFE IDs)
   if (select.value.indexOf('__preset:') === 0) {
     var presetKey = select.value.replace('__preset:', '');
-    var label = presetKey === 'hardened' ? 'Hardened (deploy default)' : 'Permissive (RBAC open, JWT enforced)';
+    var label = presetKey === 'hardened' ? 'Hardened (deploy default)' : 'Permissive (RBAC + Employee Menus network access)';
     // Try server-hydrated presets first, fall back to static
     api('/preset-policies').then(function(presets) {
       var yaml = presets[presetKey] || PRESET_POLICIES[presetKey];
@@ -1843,6 +1850,7 @@ function loadSelectedConfig() {
         // Use server-parsed JSON for diff (avoids JS YAML parser issues with safe_dump format)
         state.policyEditorParsed = presets[presetKey + '_parsed'] || null;
         state.policyEditorDirty = false;
+        state.policyEditorPreset = presetKey;
         state.policyUpdateResult = { ok: true, msg: 'Loaded preset: ' + label + ' (hydrated)' };
         render();
       }
@@ -1852,6 +1860,7 @@ function loadSelectedConfig() {
         state.policyEditorYaml = yaml;
         state.policyEditorParsed = null;
         state.policyEditorDirty = false;
+        state.policyEditorPreset = presetKey;
         state.policyUpdateResult = { ok: true, msg: 'Loaded preset: ' + label };
         render();
       }
@@ -1865,6 +1874,7 @@ function loadSelectedConfig() {
 
   state.policyEditorYaml = cfg.yaml;
   state.policyEditorDirty = false;
+  state.policyEditorPreset = null;
   state.policyUpdateResult = { ok: true, msg: 'Loaded "' + cfg.name + '"' };
   render();
 }
@@ -3541,7 +3551,7 @@ function renderPolicy(root) {
   // Built-in presets (not deletable)
   var presetGroup = document.createElement('optgroup'); presetGroup.label = 'Built-in Presets';
   var hOpt = document.createElement('option'); hOpt.value = '__preset:hardened'; hOpt.textContent = '\uD83D\uDD12 Hardened (deploy default)'; presetGroup.appendChild(hOpt);
-  var pOpt = document.createElement('option'); pOpt.value = '__preset:permissive'; pOpt.textContent = '\uD83D\uDD13 Permissive (RBAC open, JWT enforced)'; presetGroup.appendChild(pOpt);
+  var pOpt = document.createElement('option'); pOpt.value = '__preset:permissive'; pOpt.textContent = '\uD83D\uDD13 Permissive (RBAC + Employee Menus mTLS)'; presetGroup.appendChild(pOpt);
   select.appendChild(presetGroup);
   // User-saved configs
   if ((state.policyConfigs || []).length > 0) {
@@ -3706,6 +3716,7 @@ function renderPolicy(root) {
     state.policyEditorDirty = true;
     state.policyEditorYaml = ta.value;
     state.policyEditorParsed = null; // Clear pre-parsed JSON when user edits
+    state.policyEditorPreset = null;
   };
   // Restore cursor position after DOM insertion
   if (savedCursor && savedCursor.focused) {
@@ -3743,6 +3754,7 @@ function renderPolicy(root) {
   copyLink.onclick = function() {
     state.policyEditorYaml = activeYaml;
     state.policyEditorDirty = false;
+    state.policyEditorPreset = null;
     state.policyUpdateResult = { ok: true, msg: 'Editor synced with active policy.' };
     render();
   };

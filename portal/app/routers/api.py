@@ -205,6 +205,12 @@ async def get_preset_policies(request: Request, _user=Depends(viewer_or_admin)):
     }
 
 
+@router.post("/preset-policies/{preset_name}/apply")
+async def apply_preset_policy(preset_name: str, request: Request, _user=Depends(admin_only)):
+    container = get_container(request)
+    return await container.policy_service.apply_preset(preset_name, get_request_id(request))
+
+
 @router.post("/scan")
 async def run_scan(request: Request, _user=Depends(admin_only)):
     container = get_container(request)
