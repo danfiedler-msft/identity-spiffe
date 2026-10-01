@@ -62,6 +62,28 @@ trap '_deploy_err_trap "$LINENO" "$BASH_COMMAND"' ERR
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 
+# Entra provisioning requires requests and PyYAML. Prefer the caller's Python,
+# but fall back to Azure CLI's bundled environment when system package policy
+# prevents installing those modules.
+DEPLOY_PYTHON="${DEPLOY_PYTHON:-$(command -v python3)}"
+if ! "$DEPLOY_PYTHON" -c 'import requests, yaml' >/dev/null 2>&1; then
+    AZURE_CLI_PYTHON=""
+    if command -v brew >/dev/null 2>&1; then
+        AZURE_CLI_PYTHON="$(brew --prefix azure-cli 2>/dev/null)/libexec/bin/python3"
+    fi
+    if [ -z "$AZURE_CLI_PYTHON" ] || [ ! -x "$AZURE_CLI_PYTHON" ] ||
+       ! "$AZURE_CLI_PYTHON" -c 'import requests, yaml' >/dev/null 2>&1; then
+        echo "ERROR: Python with the requests and PyYAML modules is required." >&2
+        echo "Set DEPLOY_PYTHON to a compatible interpreter and retry." >&2
+        exit 1
+    fi
+    DEPLOY_PYTHON="$AZURE_CLI_PYTHON"
+fi
+python3() {
+    "$DEPLOY_PYTHON" "$@"
+}
+echo "✅ Deployment Python: ${DEPLOY_PYTHON}"
+
 # shellcheck source=scripts/lib/deploy-config.sh
 source "${SCRIPT_DIR}/scripts/lib/deploy-config.sh"
 # shellcheck source=scripts/lib/azure-helpers.sh
