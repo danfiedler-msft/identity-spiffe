@@ -54,6 +54,7 @@ azd env set AZURE_TENANT_ID "$TENANT"
 azd env set AZURE_LOCATION westus
 azd env set ISP_ENV_SCOPE_MODE scoped
 azd env set ISP_ENV_SCOPE_KEY "$ENV_NAME"
+azd env config set infra.parameters.environmentName "$ENV_NAME"
 
 if [ "$(azd env get-values | grep -E '^AZURE_ENV_NAME=' | cut -d= -f2- | tr -d '\"')" != "$ENV_NAME" ]; then
     echo "Could not select azd environment $ENV_NAME; nothing was deleted." >&2
