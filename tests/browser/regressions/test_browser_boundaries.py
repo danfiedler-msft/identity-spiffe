@@ -207,6 +207,7 @@ class BrowserBoundaryRegressionTests(unittest.TestCase):
                 result = auth_setup.main([
                     "--config", "unused", "--portal", "management", "--role", "admin",
                     "--auto-capture", "--status-output", str(directory / "status.json"),
+                    "--timeout-seconds", "60",
                 ])
             self.assertEqual(result, 0)
             self.assertIn("DO NOT CLOSE THIS TERMINAL", output.getvalue())

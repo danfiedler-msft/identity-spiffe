@@ -108,8 +108,11 @@ def fixture_msal(role):
         "idTokenClaims": {"groups": [f"fixture-{role}-group"] if role != "unassigned" else []},
     }
     return """window.msal = {PublicClientApplication: class {
+        constructor() { this.activeAccount = null; }
         handleRedirectPromise() { return Promise.resolve(null); }
         getAllAccounts() { return ACCOUNTS; }
+        getActiveAccount() { return this.activeAccount; }
+        setActiveAccount(account) { this.activeAccount = account; }
         acquireTokenSilent() { return Promise.resolve({account: ACCOUNT, idToken: TOKEN}); }
         acquireTokenRedirect() { return Promise.reject(new Error('fixture cannot authenticate')); }
     }};""".replace("ACCOUNTS", json.dumps([] if role == "anonymous" else [account])).replace(
