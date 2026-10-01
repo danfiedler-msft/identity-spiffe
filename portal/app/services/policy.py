@@ -351,24 +351,15 @@ class PolicyService:
             }
             if "ca" in spec:
                 entry["ca"] = dict(spec["ca"])
-            # Permissive: all RBAC rules are allow, but JWT is still enforced
+            # Permissive: allow all routes without OAuth/JWT enforcement.
             entry["rules"] = []
             for rule in spec["rules"]:
                 permissive = rule.get("permissive", {})
-                require_jwt = permissive.get("require_jwt", rule.get("require_jwt"))
-                required_roles = permissive.get("required_roles", rule.get("required_roles"))
-                if required_roles:
-                    require_jwt = True
-
                 yaml_rule = {
                     "path": rule["path"],
                     "methods": rule["methods"],
                     "action": permissive.get("action", "allow"),
                 }
-                if require_jwt:
-                    yaml_rule["require_jwt"] = True
-                if required_roles:
-                    yaml_rule["required_roles"] = required_roles
                 entry["rules"].append(yaml_rule)
             self.append_identity_policy(policy, entry, spiffe_id)
         return yaml.safe_dump(policy, sort_keys=False, default_flow_style=False, indent=2)
@@ -428,6 +419,29 @@ class PolicyService:
                 spec["rules"],
             )
         return self.ensure_control_plane_policy(policy)
+
+    def enable_jwt_validation(self, current_policy):
+        # type: (Dict[str, Any]) -> Dict[str, Any]
+        policy = dict(current_policy)
+        policy.pop("loaded_at", None)
+        policy.pop("request_count", None)
+        policy["policies"] = [dict(entry) for entry in current_policy.get("policies", [])]
+        policy["federated_policies"] = [dict(entry) for entry in current_policy.get("federated_policies", [])]
+        for collection_name in ("policies", "federated_policies"):
+            for entry in policy[collection_name]:
+                if entry.get("name") == MGMT_PLANE_AGENT_KEY:
+                    continue
+                rules = [dict(rule) for rule in entry.get("rules", [])]
+                for rule in rules:
+                    if str(rule.get("action", "")).lower() != "allow":
+                        continue
+                    rule["require_jwt"] = True
+                    if rule.get("path") == "/budget/read":
+                        rule["required_roles"] = ["Budget.Read"]
+                    elif rule.get("path") == "/budget/submit":
+                        rule["required_roles"] = ["Budget.Submit"]
+                entry["rules"] = rules
+        return policy
 
     async def get_policy(self, request_id):
         # type: (str) -> Dict[str, Any]

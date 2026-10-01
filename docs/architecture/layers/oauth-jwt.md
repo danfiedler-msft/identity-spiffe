@@ -55,6 +55,12 @@ Security-sensitive paths do not treat token errors as "no token required":
 - missing required role means deny
 - unexpected claim shape means deny
 
+## Demo Presets and Scanner
+
+The built-in permissive preset intentionally disables JWT validation on allowed business routes so the demo can show a request succeeding without Layer 3 enforcement. The security scan reports this as a critical `OAuth2 JWT validation is disabled` finding, and its quick fix restores JWT validation while preserving the current RBAC default action and mTLS allow list.
+
+The hardened preset requires JWT validation and the expected budget roles. Outside the explicit permissive demo posture, missing or invalid tokens continue to fail closed.
+
 ## OData and Graph Usage
 
 The repo also talks to Microsoft Graph for Entra provisioning and governance. Those Graph queries often use OData filters. Current code escapes filter values before issuing those queries so identity provisioning and portal governance do not accidentally create an injection surface.

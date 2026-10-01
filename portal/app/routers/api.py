@@ -252,6 +252,12 @@ async def apply_quick_fix(payload: QuickFixRequest, request: Request, _user=Depe
             yaml_body = fallback_yaml
         result = await container.policy_service.put_policy(yaml_body, request_id)
         return {"status": "applied", "fix_type": payload.fix_type.value, "result": result}
+    if payload.fix_type.value == "oauth-jwt":
+        current_policy = await container.policy_service.get_policy(request_id)
+        hardened_policy = container.policy_service.enable_jwt_validation(current_policy)
+        yaml_body = yaml.safe_dump(hardened_policy, sort_keys=False)
+        result = await container.policy_service.put_policy(yaml_body, request_id)
+        return {"status": "applied", "fix_type": payload.fix_type.value, "result": result}
     raise PortalError(400, "invalid_fix_type", "Unknown fix_type: {0}".format(payload.fix_type.value))
 
 

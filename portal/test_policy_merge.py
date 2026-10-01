@@ -2,10 +2,13 @@
 """Unit tests for additive RBAC quick-fix policy merge behavior."""
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import yaml
 
 from portal.app.services.policy import PolicyService
+from portal.app.services.scan import ScanService
 from portal.app.settings import AgentConfig, ControlPlaneConfig, PortalSettings
 
 
@@ -28,16 +31,34 @@ def _make_service():
 
 
 class TestPolicyMerge(unittest.TestCase):
-    def test_build_permissive_rbac_yaml_enforces_submit_role_for_budget_report(self):
+    def test_build_permissive_rbac_yaml_disables_jwt_for_budget_routes(self):
         service = _make_service()
 
         policy = yaml.safe_load(service.build_permissive_rbac_yaml())
         report = next(entry for entry in policy["policies"] if entry.get("name") == "budget-report")
         submit_rule = next(rule for rule in report["rules"] if rule.get("path") == "/budget/submit")
+        read_rule = next(rule for rule in report["rules"] if rule.get("path") == "/budget/read")
 
         self.assertEqual(submit_rule.get("action"), "allow")
-        self.assertTrue(submit_rule.get("require_jwt"))
-        self.assertEqual(submit_rule.get("required_roles"), ["Budget.Submit"])
+        self.assertNotIn("require_jwt", submit_rule)
+        self.assertNotIn("required_roles", submit_rule)
+        self.assertNotIn("require_jwt", read_rule)
+        self.assertNotIn("required_roles", read_rule)
+
+    def test_enable_jwt_validation_preserves_permissive_rbac(self):
+        service = _make_service()
+        permissive = yaml.safe_load(service.build_permissive_rbac_yaml())
+
+        fixed = service.enable_jwt_validation(permissive)
+        report = next(entry for entry in fixed["policies"] if entry.get("name") == "budget-report")
+        read_rule = next(rule for rule in report["rules"] if rule.get("path") == "/budget/read")
+        submit_rule = next(rule for rule in report["rules"] if rule.get("path") == "/budget/submit")
+
+        self.assertEqual(fixed["default_action"], "allow")
+        self.assertTrue(read_rule["require_jwt"])
+        self.assertEqual(read_rule["required_roles"], ["Budget.Read"])
+        self.assertTrue(submit_rule["require_jwt"])
+        self.assertEqual(submit_rule["required_roles"], ["Budget.Submit"])
 
     def test_presets_put_foreign_agents_in_federated_policies(self):
         service = _make_service()
@@ -221,6 +242,41 @@ class TestPolicyMerge(unittest.TestCase):
         guarded_ids = service.ensure_control_plane_in_mtls(["spiffe://aim.microsoft.com/ests/bp/x/aid/report"])
 
         self.assertIn("spiffe://aim.microsoft.com/ests/bp/x/aid/admin", guarded_ids)
+
+
+class TestSecurityScan(unittest.IsolatedAsyncioTestCase):
+    async def test_scan_reports_disabled_jwt_validation(self):
+        policy_service = SimpleNamespace(
+            get_mtls_policy=AsyncMock(return_value={"allowed_ids": []}),
+            get_policy=AsyncMock(
+                return_value={
+                    "default_action": "allow",
+                    "policies": [
+                        {
+                            "name": "budget-report",
+                            "rules": [
+                                {
+                                    "path": "/budget/submit",
+                                    "methods": ["POST"],
+                                    "action": "allow",
+                                }
+                            ],
+                        }
+                    ],
+                    "federated_policies": [],
+                }
+            ),
+            settings=SimpleNamespace(agents={}, control_plane=SimpleNamespace(spiffe_id="")),
+            get_agent_spiffe_id=lambda key: "spiffe://aim.microsoft.com/{0}".format(key),
+            build_hardened_rbac_yaml=lambda: "version: '5.0'",
+            is_agent_policy=lambda policy, agent_key: False,
+        )
+
+        result = await ScanService(policy_service).run_scan("request-id")
+        finding = next(item for item in result["findings"] if item["id"] == "oauth-jwt-validation-disabled")
+
+        self.assertEqual(finding["severity"], "CRITICAL")
+        self.assertEqual(finding["fix_type"], "oauth-jwt")
 
 
 if __name__ == "__main__":

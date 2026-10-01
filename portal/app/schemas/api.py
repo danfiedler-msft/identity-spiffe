@@ -22,6 +22,7 @@ class RiskLevel(str, Enum):
 class FixType(str, Enum):
     MTLS_REMOVE = "mtls-remove"
     RBAC_POLICY = "rbac-policy"
+    OAUTH_JWT = "oauth-jwt"
 
 
 class ExecuteRequest(BaseModel):

@@ -916,7 +916,7 @@ function applyQuickFix(finding) {
     // Refresh relevant data without auto-re-scanning.
     if (finding.fix_type === 'mtls-remove') {
       return loadMtls();
-    } else if (finding.fix_type === 'rbac-policy') {
+    } else if (finding.fix_type === 'rbac-policy' || finding.fix_type === 'oauth-jwt') {
       return loadPolicy();
     }
   }).catch(function(e) {
@@ -1086,13 +1086,9 @@ var PRESET_POLICIES = {
     '      - path: "/budget/read"\n' +
     '        methods: ["GET", "POST"]\n' +
     '        action: allow\n' +
-    '        require_jwt: true\n' +
-    '        required_roles: ["Budget.Read"]\n' +
     '      - path: "/budget/submit"\n' +
     '        methods: ["POST"]\n' +
     '        action: allow\n' +
-    '        require_jwt: true\n' +
-    '        required_roles: ["Budget.Submit"]\n' +
     '  - spiffe_id_prefix: "spiffe://aim.microsoft.com/ests/bp/"\n' +
     '    name: "employee-menus"\n' +
     '    description: "No network/STS access - blocked at mTLS + CA tag layers"\n' +
@@ -1115,13 +1111,9 @@ var PRESET_POLICIES = {
     '      - path: "/budget/read"\n' +
     '        methods: ["GET", "POST"]\n' +
     '        action: allow\n' +
-    '        require_jwt: true\n' +
-    '        required_roles: ["Budget.Read"]\n' +
     '      - path: "/budget/submit"\n' +
     '        methods: ["POST"]\n' +
     '        action: allow\n' +
-    '        require_jwt: true\n' +
-    '        required_roles: ["Budget.Submit"]\n' +
     '  - spiffe_id_prefix: "spiffe://aim.microsoft.com/ests/bp/"\n' +
     '    name: "admin-control-plane"\n' +
     '    description: "Dedicated management service"\n' +
@@ -1847,7 +1839,7 @@ function loadSelectedConfig() {
   // Handle built-in presets — fetch hydrated versions from server (real SPIFFE IDs)
   if (select.value.indexOf('__preset:') === 0) {
     var presetKey = select.value.replace('__preset:', '');
-    var label = presetKey === 'hardened' ? 'Hardened (deploy default)' : 'Permissive (RBAC + Employee Menus network access)';
+    var label = presetKey === 'hardened' ? 'Hardened (deploy default)' : 'Permissive (RBAC, mTLS, and OAuth/JWT open)';
     // Try server-hydrated presets first, fall back to static
     api('/preset-policies').then(function(presets) {
       var yaml = presets[presetKey] || PRESET_POLICIES[presetKey];
@@ -3557,7 +3549,7 @@ function renderPolicy(root) {
   // Built-in presets (not deletable)
   var presetGroup = document.createElement('optgroup'); presetGroup.label = 'Built-in Presets';
   var hOpt = document.createElement('option'); hOpt.value = '__preset:hardened'; hOpt.textContent = '\uD83D\uDD12 Hardened (deploy default)'; presetGroup.appendChild(hOpt);
-  var pOpt = document.createElement('option'); pOpt.value = '__preset:permissive'; pOpt.textContent = '\uD83D\uDD13 Permissive (RBAC + Employee Menus mTLS)'; presetGroup.appendChild(pOpt);
+  var pOpt = document.createElement('option'); pOpt.value = '__preset:permissive'; pOpt.textContent = '\uD83D\uDD13 Permissive (RBAC + mTLS + OAuth/JWT open)'; presetGroup.appendChild(pOpt);
   select.appendChild(presetGroup);
   // User-saved configs
   if ((state.policyConfigs || []).length > 0) {
