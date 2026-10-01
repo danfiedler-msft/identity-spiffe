@@ -86,6 +86,7 @@ echo "✅ Deployment Python: ${DEPLOY_PYTHON}"
 
 # shellcheck source=scripts/lib/deploy-config.sh
 source "${SCRIPT_DIR}/scripts/lib/deploy-config.sh"
+PORTAL_IMAGE_TAG="${IMAGE_TAG}-$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD)"
 # shellcheck source=scripts/lib/azure-helpers.sh
 source "${SCRIPT_DIR}/scripts/lib/azure-helpers.sh"
 # shellcheck source=scripts/lib/entra-scope.sh
@@ -635,25 +636,25 @@ build_portal_images() {
 
     echo ""
     echo "🌐 Building portal images..."
-    echo "   Building isp-portal:${IMAGE_TAG} (cache-bust=${cache_bust_val})..."
+    echo "   Building isp-portal:${PORTAL_IMAGE_TAG} (cache-bust=${cache_bust_val})..."
     if ! az acr build \
         --registry "$ACR_NAME" \
-        --image "isp-portal:${IMAGE_TAG}" \
+        --image "isp-portal:${PORTAL_IMAGE_TAG}" \
         --file portal/Dockerfile \
         --build-arg "CACHE_BUST=${cache_bust_val}" \
-        --build-arg "BUILD_VERSION=${IMAGE_TAG}" \
+        --build-arg "BUILD_VERSION=${PORTAL_IMAGE_TAG}" \
         "$build_context"; then
         rm -rf "$build_context"
         return 1
     fi
 
-    echo "   Building securityportal-mock:${IMAGE_TAG} (cache-bust=${cache_bust_val})..."
+    echo "   Building securityportal-mock:${PORTAL_IMAGE_TAG} (cache-bust=${cache_bust_val})..."
     if ! az acr build \
         --registry "$ACR_NAME" \
-        --image "securityportal-mock:${IMAGE_TAG}" \
+        --image "securityportal-mock:${PORTAL_IMAGE_TAG}" \
         --file securityportal-mock/Dockerfile \
         --build-arg "CACHE_BUST=${cache_bust_val}" \
-        --build-arg "BUILD_VERSION=${IMAGE_TAG}" \
+        --build-arg "BUILD_VERSION=${PORTAL_IMAGE_TAG}" \
         "$build_context"; then
         rm -rf "$build_context"
         return 1
@@ -2320,7 +2321,7 @@ if [ -n "$PORTAL_AUTH_CLIENT_ID" ] || [ -n "$ADMIN_CP_URL" ]; then
         az containerapp update \
         --name isp-portal \
         --resource-group "$RG" \
-        --image "${ACR_SERVER}/isp-portal:${IMAGE_TAG}" \
+        --image "${ACR_SERVER}/isp-portal:${PORTAL_IMAGE_TAG}" \
         --set-env-vars "${portal_env_vars[@]}"
 
     run_az_step "Failed to set securityportal-mock secrets" \
@@ -2335,7 +2336,7 @@ if [ -n "$PORTAL_AUTH_CLIENT_ID" ] || [ -n "$ADMIN_CP_URL" ]; then
         az containerapp update \
         --name securityportal-mock \
         --resource-group "$RG" \
-        --image "${ACR_SERVER}/securityportal-mock:${IMAGE_TAG}" \
+        --image "${ACR_SERVER}/securityportal-mock:${PORTAL_IMAGE_TAG}" \
         --set-env-vars "${securityportal_env_vars[@]}"
 
     echo "✅ Portal Container Apps updated"
