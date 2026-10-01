@@ -77,7 +77,11 @@ class PortalContainer:
             health_service=health_service,
         )
 
-    async def reload_local_settings(self):
+    async def reload_settings(self):
         # type: () -> None
         refreshed = await type(self).create(self.settings.config_path, self.http_client)
         self.__dict__.update(refreshed.__dict__)
+
+    async def reload_local_settings(self):
+        # type: () -> None
+        await self.reload_settings()

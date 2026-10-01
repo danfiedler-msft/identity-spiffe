@@ -39,6 +39,8 @@ async def _resolve_external_invoke_url(container, agent_key):
 @router.get("/config")
 async def get_config(request: Request, _user=Depends(viewer_or_admin)):
     container = get_container(request)
+    if container.settings.runtime_environment == "cloud":
+        await container.reload_settings()
     return container.settings.to_public_dict()
 
 
@@ -333,9 +335,8 @@ async def refresh_agents(request: Request, _user=Depends(admin_only)):
     container = get_container(request)
     if container.settings.runtime_environment != "cloud":
         raise PortalError(403, "forbidden", "Agent refresh is only available in cloud mode; use /api/reload-config in local mode")
-    refreshed = await type(container).create(container.settings.config_path, container.http_client)
-    request.app.state.container = refreshed
-    return {"status": "refreshed", "agents": list(refreshed.settings.agents.keys())}
+    await container.reload_settings()
+    return {"status": "refreshed", "agents": list(container.settings.agents.keys())}
 
 
 @router.post("/sync-attributes")
