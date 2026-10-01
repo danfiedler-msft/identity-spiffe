@@ -50,3 +50,68 @@ test('Settings displays loading failures even before a settings response exists'
   context.renderSettings(root);
   assert.ok(root.children[0].children.some(child => child.textContent === context.state.riskSettingsError));
 });
+
+function renderRiskSettings(role = 'admin') {
+  const nodes = [];
+  const node = tag => {
+    const element = {
+      tag, children: [], style: {}, attributes: {},
+      appendChild(child) { this.children.push(child); },
+      setAttribute(name, value) { this.attributes[name] = value; },
+    };
+    nodes.push(element);
+    return element;
+  };
+  const root = node('root');
+  const context = {
+    state: {
+      riskSettings: {
+        signal: { enabled: true, status: 'unavailable', detail: 'Your tenant is not licensed for this feature.' },
+        risk_enforcement_enabled: false, enforcement_control_supported: true,
+      },
+    },
+    currentUser: { role },
+    document: { createElement: node, createTextNode: text => ({ textContent: text }) },
+  };
+  vm.createContext(context);
+  const begin = html.indexOf('function renderSettings(root)');
+  const finish = html.indexOf('\n}', begin) + 2;
+  vm.runInContext(html.slice(begin, finish), context);
+  context.renderSettings(root);
+  return nodes;
+}
+
+test('Settings uses padded product cards, status badges, and accessible switches', () => {
+  const nodes = renderRiskSettings();
+  assert.equal(nodes.filter(n => n.className === 'card settings-card').length, 2);
+  assert.ok(nodes.some(n => n.className === 'badge medium' && n.textContent === 'Unavailable'));
+  assert.ok(nodes.some(n => n.className === 'policy-msg warn' && n.textContent === 'Your tenant is not licensed for this feature.'));
+  const switches = nodes.filter(n => n.tag === 'input');
+  assert.equal(switches.length, 2);
+  assert.ok(switches.every(n => n.attributes.role === 'switch' && n.attributes['aria-label']));
+  assert.equal(switches[0].checked, true);
+  assert.equal(switches[1].checked, false);
+});
+
+test('Settings switches remain disabled for viewers', () => {
+  assert.ok(renderRiskSettings('viewer').filter(n => n.tag === 'input').every(n => n.disabled));
+});
+
+test('Settings API failures omit downstream response bodies', async () => {
+  const context = {
+    _accessToken: null,
+    fetch: async () => ({
+      ok: false, status: 503,
+      json: async () => ({
+        detail: 'Risk settings could not be read',
+        meta: { body: '{"detail":"internal-request-id"}' },
+      }),
+    }),
+  };
+  vm.createContext(context);
+  vm.runInContext(html.slice(html.indexOf('function api('), html.indexOf('function loadConfig()')), context);
+  await assert.rejects(
+    context.api('/settings/risk', { hideErrorDetails: true }),
+    error => error.message === 'Risk settings could not be read',
+  );
+});

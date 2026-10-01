@@ -274,6 +274,26 @@ body { font-family: var(--font); background: var(--bg); color: var(--text-0); mi
 .health-card .h-label { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .health-card .h-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
 
+/* ── Settings ── */
+.settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.settings-card { padding: 24px; display: flex; flex-direction: column; }
+.settings-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.settings-card-header .section-title { margin-bottom: 0; }
+.settings-card > .finding-desc { margin-bottom: 20px; }
+.settings-card .policy-msg { margin: 0 0 20px; }
+.settings-control { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border-light); font-weight: 500; }
+.settings-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+.settings-switch input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 1; }
+.settings-track { display: block; width: 100%; height: 100%; background: var(--text-4); border-radius: 10px; transition: background 0.15s; }
+.settings-track::after { content: ''; position: absolute; width: 16px; height: 16px; top: 2px; left: 2px; border-radius: 50%; background: var(--bg-card); transition: transform 0.15s; }
+.settings-switch input:checked + .settings-track { background: var(--blue); }
+.settings-switch input:checked + .settings-track::after { transform: translateX(16px); }
+.settings-switch input:focus-visible + .settings-track { outline: 2px solid var(--blue); outline-offset: 3px; }
+.settings-switch input:disabled { cursor: not-allowed; }
+.settings-switch input:disabled + .settings-track { opacity: 0.5; }
+.settings-note { margin-top: 16px; }
+@media (max-width: 860px) { .settings-grid { grid-template-columns: 1fr; } }
+
 /* ── Buttons ── */
 .btn-refresh { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-2); padding: 6px 14px; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; font-family: var(--font); font-weight: 500; }
 .btn-refresh:hover { border-color: var(--blue); color: var(--blue); }
@@ -667,7 +687,7 @@ function updateRiskSignalBadge() {
 }
 
 function loadRiskSettings() {
-  return api('/settings/risk').then(function(data) {
+  return api('/settings/risk', { hideErrorDetails: true }).then(function(data) {
     state.riskSettings = data;
     updateRiskSignalBadge();
   }).catch(function(err) {
@@ -860,7 +880,7 @@ function api(path, opts) {
     if (!r.ok) {
       return r.json().catch(function() { return { detail: r.statusText }; }).then(function(body) {
         var detail = body.detail || body.error || 'Request failed (' + r.status + ')';
-        if (body.meta && body.meta.body) {
+        if (!opts.hideErrorDetails && body.meta && body.meta.body) {
           var downstream = body.meta.body;
           try {
             var parsed = JSON.parse(downstream);
@@ -2591,34 +2611,59 @@ function render() {
 
 function renderSettings(root) {
   var data = state.riskSettings;
-  var card = document.createElement('div'); card.className = 'card';
-  var heading = document.createElement('h3'); heading.textContent = 'Agent risk settings'; card.appendChild(heading);
-  var explanation = document.createElement('p');
-  explanation.textContent = 'Entra signal monitoring reads riskyAgents; it does not manufacture safe ratings or populate sidecar evidence. Local risk enforcement uses sidecar evidence and Entra CA blocked levels. Turning it off preserves agent-state, tag, mTLS, RBAC, and JWT checks. Tenant Conditional Access policies and STS enforcement are not changed.';
-  card.appendChild(explanation);
   if (!data) {
+    var card = document.createElement('div'); card.className = 'card settings-card';
+    var heading = document.createElement('h3'); heading.className = 'section-title';
+    heading.textContent = 'Agent risk settings'; card.appendChild(heading);
     var loading = document.createElement('p');
+    loading.className = state.riskSettingsError ? 'policy-msg err' : 'finding-desc';
     loading.textContent = state.riskSettingsError || 'Loading risk settings...';
-    if (state.riskSettingsError) loading.style.color = 'var(--red)';
     card.appendChild(loading);
     root.appendChild(card);
     return;
   }
   var signal = data.signal || {};
-  card.appendChild(Object.assign(document.createElement('p'), {
-    textContent: 'Entra risk signal: ' + (signal.status || 'unknown') + ' — ' + (signal.detail || ''),
-  }));
   if (state.riskSettingsError) {
-    var error = document.createElement('p'); error.style.color = 'var(--red)';
-    error.textContent = state.riskSettingsError; card.appendChild(error);
+    var error = document.createElement('p'); error.className = 'policy-msg err';
+    error.setAttribute('role', 'alert');
+    error.textContent = state.riskSettingsError; root.appendChild(error);
   }
+  var grid = document.createElement('div'); grid.className = 'settings-grid';
   [
-    { label: 'Read Entra agent risk signals', enabled: signal.enabled, path: '/settings/risk-signal' },
-    { label: 'Enforce risk evidence in the sidecar', enabled: data.risk_enforcement_enabled, path: '/settings/risk-enforcement', unsupported: !data.enforcement_control_supported },
+    {
+      title: 'Entra agent risk signals', label: 'Read Entra agent risk signals',
+      description: 'Read agent risk ratings from Microsoft Entra. Missing ratings remain unknown.',
+      enabled: signal.enabled, path: '/settings/risk-signal',
+      status: signal.status === 'on' ? 'On' : signal.status === 'off' ? 'Off' : 'Unavailable',
+      notice: signal.status === 'unavailable' ? signal.detail : null,
+    },
+    {
+      title: 'Local risk enforcement', label: 'Enforce agent risk',
+      description: 'Block agent calls using risk evidence and Conditional Access rules. Other security controls remain active when this is off.',
+      enabled: data.risk_enforcement_enabled, path: '/settings/risk-enforcement',
+      unsupported: !data.enforcement_control_supported,
+      status: data.risk_enforcement_enabled === true ? 'On' : data.risk_enforcement_enabled === false ? 'Off' : 'Unavailable',
+      notice: data.enforcement_control_supported === false ? 'Update the platform to enable this control.' : null,
+    },
   ].forEach(function(setting) {
-    var row = document.createElement('p');
-    var label = document.createElement('label');
+    var card = document.createElement('div'); card.className = 'card settings-card';
+    var header = document.createElement('div'); header.className = 'settings-card-header';
+    var title = document.createElement('h3'); title.className = 'section-title'; title.textContent = setting.title;
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + (setting.status === 'On' ? 'ok' : setting.status === 'Off' ? 'low' : 'medium');
+    badge.textContent = setting.status;
+    header.appendChild(title); header.appendChild(badge); card.appendChild(header);
+    var description = document.createElement('p'); description.className = 'finding-desc';
+    description.textContent = setting.description; card.appendChild(description);
+    if (setting.notice) {
+      var notice = document.createElement('p'); notice.className = 'policy-msg warn';
+      notice.setAttribute('role', 'status'); notice.textContent = setting.notice; card.appendChild(notice);
+    }
+    var label = document.createElement('label'); label.className = 'settings-control';
+    var caption = document.createElement('span'); caption.textContent = setting.label; label.appendChild(caption);
+    var toggle = document.createElement('span'); toggle.className = 'settings-switch';
     var checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+    checkbox.setAttribute('role', 'switch'); checkbox.setAttribute('aria-label', setting.label);
     checkbox.checked = setting.enabled === true;
     checkbox.disabled = !currentUser || currentUser.role !== 'admin' || typeof setting.enabled !== 'boolean' || setting.unsupported;
     checkbox.onchange = function() {
@@ -2628,15 +2673,21 @@ function renderSettings(root) {
       }
       checkbox.disabled = true;
       state.riskSettingsError = null;
-      api(setting.path, { method: 'PUT', body: JSON.stringify({ enabled: enabled }) })
+      api(setting.path, { method: 'PUT', body: JSON.stringify({ enabled: enabled }), hideErrorDetails: true })
         .then(function() { return Promise.all([loadRiskSettings(), loadPolicy()]); })
         .catch(function(err) { state.riskSettingsError = err.message; })
         .finally(render);
     };
-    label.appendChild(checkbox); label.appendChild(document.createTextNode(' ' + setting.label));
-    row.appendChild(label); card.appendChild(row);
+    var track = document.createElement('span'); track.className = 'settings-track';
+    track.setAttribute('aria-hidden', 'true');
+    toggle.appendChild(checkbox); toggle.appendChild(track); label.appendChild(toggle);
+    card.appendChild(label); grid.appendChild(card);
   });
-  root.appendChild(card);
+  root.appendChild(grid);
+  var note = document.createElement('p'); note.className = 'finding-desc settings-note';
+  note.textContent = 'These settings do not change your tenant\u2019s Conditional Access policies or token issuance.'
+    + (!currentUser || currentUser.role !== 'admin' ? ' Only administrators can change these settings.' : '');
+  root.appendChild(note);
 }
 
 /* ═══════════ OVERVIEW TAB ═══════════ */

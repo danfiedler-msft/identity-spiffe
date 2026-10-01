@@ -72,9 +72,12 @@ class RiskSettingsService:
                 }
             except PortalError as exc:
                 logger.warning("Entra agent risk signal unavailable: %s %s", exc.detail, exc.meta)
-                detail = exc.detail
-                if exc.meta.get("body"):
-                    detail += ": " + exc.meta["body"]
+                body = exc.meta.get("body", "")
+                detail = "Entra agent risk signals are temporarily unavailable. Try again later."
+                if isinstance(body, str) and "not licensed" in body.lower():
+                    detail = "Your tenant is not licensed for this feature."
+                elif exc.meta.get("status_code") in (401, 403):
+                    detail = "Access to Entra agent risk signals is not permitted. Check your Microsoft Graph permissions."
                 self._signal = {
                     "enabled": True, "status": "unavailable", "detail": detail,
                     "checked_at": checked_at, "risks": {}, "error_code": exc.error_code,

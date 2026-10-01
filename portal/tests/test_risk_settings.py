@@ -55,6 +55,26 @@ class TestRiskSettings(unittest.IsolatedAsyncioTestCase):
         self.assertIn("not licensed", result["detail"])
         self.assertEqual(result["risks"], {})
 
+    async def test_graph_payload_is_replaced_with_customer_facing_license_message(self):
+        service = self.make_service()
+        service.graph_client.fetch_risky_agents.side_effect = PortalError(
+            502, "graph_risky_agents_failed", "Failed to fetch risky agents from Microsoft Graph",
+            {"status_code": 403, "body": '{"error":{"code":"Forbidden","message":"Your tenant is not licensed for this feature.","innerError":{"request-id":"internal-request-id"}}}'},
+        )
+        result = await service.signal_status()
+        self.assertEqual(result["detail"], "Your tenant is not licensed for this feature.")
+        self.assertNotIn("internal-request-id", result["detail"])
+
+    async def test_unexpected_provider_errors_do_not_expose_internal_details(self):
+        service = self.make_service()
+        service.graph_client.fetch_risky_agents.side_effect = PortalError(
+            502, "graph_risky_agents_failed", "Internal connection failure",
+            {"status_code": 503, "body": "<html>Internal upstream diagnostics</html>"},
+        )
+        result = await service.signal_status()
+        self.assertEqual(result["detail"], "Entra agent risk signals are temporarily unavailable. Try again later.")
+        self.assertEqual(result["status"], "unavailable")
+
     async def test_signal_read_is_cached_and_toggle_invalidates(self):
         service = self.make_service()
         await service.signal_status()
