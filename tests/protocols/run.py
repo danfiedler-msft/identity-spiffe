@@ -89,7 +89,17 @@ CATALOG = {
         "overflow_frame": "Body continuation cannot carry a second ungoverned request",
     },
 }
-LAYERS = {"MTLS": "mtls", "Enforcement": "rbac_oauth_precedence",
+CATALOG["EntraRisk"] = {
+    "high_overrides_manual_low": "Gateway denies Entra high risk even when manual evidence says low",
+    "explicit_none": "An explicit Entra none rating permits a caller under a high-risk block",
+    "unavailable": "A licensing/permissions failure denies without manual safe fallback",
+    "missing": "A missing Entra risk record denies without manufacturing a safe rating",
+    "invalid": "An unrecognized Entra rating denies",
+    "cached_rating": "Gateway reuses valid Entra evidence within the configured lifetime",
+    "zero_checks_every_call": "Zero lifetime performs an Entra lookup for every call and enforces a changed rating",
+    "failed_refresh_no_fallback": "A failed required refresh denies rather than reusing a safe rating",
+}
+LAYERS = {"MTLS": "mtls", "Enforcement": "rbac_oauth_precedence", "EntraRisk": "conditional_access",
           "CA": "conditional_access", "Tunnel": "transport_integration"}
 
 

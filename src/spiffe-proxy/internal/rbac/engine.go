@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/microsoft/identity-spiffe/src/spiffe-proxy/internal/ca"
 	"github.com/microsoft/identity-spiffe/src/spiffe-proxy/internal/oauth"
 )
@@ -33,11 +34,12 @@ type Decision struct {
 
 // Engine evaluates RBAC policies against incoming requests.
 type Engine struct {
-	store         *PolicyStore
-	validator     oauth.JWTValidator
-	riskStore     *RiskStore
-	tagStore      *TagStore
-	caPolicyCache *ca.PolicyCache
+	store          *PolicyStore
+	validator      oauth.JWTValidator
+	riskStore      *RiskStore
+	tagStore       *TagStore
+	caPolicyCache  *ca.PolicyCache
+	entraRiskCache *ca.RiskCache
 }
 
 // NewEngine creates an RBAC evaluation engine backed by the given store.
@@ -63,6 +65,49 @@ func WithCAPolicyCache(cache *ca.PolicyCache) EngineOption {
 	return func(e *Engine) {
 		e.caPolicyCache = cache
 	}
+}
+
+func WithEntraRiskCache(cache *ca.RiskCache) EngineOption {
+	return func(e *Engine) { e.entraRiskCache = cache }
+}
+
+func HigherRisk(entraRisk, manualRisk string) string {
+	order := map[string]int{"none": 0, RiskLow: 1, RiskMedium: 2, RiskHigh: 3}
+	if _, valid := order[entraRisk]; !valid {
+		return RiskUnknown
+	}
+	if order[manualRisk] > order[entraRisk] {
+		return manualRisk
+	}
+	return entraRisk
+}
+
+// EntraCallerRisk binds the rating to the authenticated SPIFFE caller, not a JWT
+// or a caller-supplied request field. Foreign exact identities use admin metadata.
+func EntraCallerRisk(policy *Policy, cp *CallerPolicy, spiffeID string, cache *ca.RiskCache) (string, error) {
+	agentID, err := uuid.Parse(cp.EntraAgentID)
+	if err != nil || agentID == uuid.Nil {
+		return "", fmt.Errorf("caller has no Entra agent identity")
+	}
+	parsed, err := url.Parse(spiffeID)
+	if err != nil {
+		return "", fmt.Errorf("invalid SPIFFE caller")
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	bound := false
+	for i, segment := range segments {
+		if segment == "aid" && i+1 < len(segments) {
+			callerID, err := uuid.Parse(segments[i+1])
+			if err != nil || callerID != agentID {
+				return "", fmt.Errorf("SPIFFE and Entra caller identities do not match")
+			}
+			bound = true
+		}
+	}
+	if !bound && cp.SpiffeID != spiffeID {
+		return "", fmt.Errorf("a namespace prefix cannot supply a single Entra identity")
+	}
+	return cache.GetRisk(agentID.String(), policy.AdminGovernance.RiskCacheLifetime())
 }
 
 // Evaluate checks whether the given (spiffeID, method, path, bearerToken) tuple is allowed.
@@ -397,7 +442,10 @@ func (e *Engine) evaluateCA(policy *Policy, cp *CallerPolicy, spiffeID, method, 
 	// 4b-2: Risk check — CA policy from Entra Graph is the sole source of truth.
 	// No YAML fallback. A configured cache must have observed a valid policy
 	// list; a failed refresh retains the last-known-good list, including empty.
-	if e.caPolicyCache != nil && policy.AdminGovernance.RiskEnforcement != "off" {
+	if (e.caPolicyCache != nil || e.entraRiskCache != nil) && policy.AdminGovernance.RiskEnforcement != "off" {
+		if e.caPolicyCache == nil {
+			return &Decision{Action: ActionDeny, Reason: "ca_policy_unavailable", EnforcementLayer: LayerCA, StatusCode: 403}
+		}
 		blockedLevels, ready := e.caPolicyCache.GetRiskPolicy()
 		if !ready {
 			log.Printf("[CA] Policy unavailable: %s", spiffeID)
@@ -408,10 +456,21 @@ func (e *Engine) evaluateCA(policy *Policy, cp *CallerPolicy, spiffeID, method, 
 		}
 		if len(blockedLevels) > 0 && !riskBootstrap {
 			risk := RiskUnknown
-			if e.riskStore != nil {
+			if e.entraRiskCache != nil {
+				entraRisk, err := EntraCallerRisk(policy, cp, spiffeID, e.entraRiskCache)
+				if err == nil {
+					risk = entraRisk
+					// SOC evidence can raise risk, but can never clear Entra risk.
+					if e.riskStore != nil {
+						risk = HigherRisk(risk, e.riskStore.GetRisk(spiffeID))
+					}
+				} else {
+					log.Printf("[CA] Entra caller risk unavailable: %s: %v", spiffeID, err)
+				}
+			} else if e.riskStore != nil {
 				risk = e.riskStore.GetRisk(spiffeID)
 			}
-			if !ValidRiskLevel(risk) {
+			if !ValidRiskLevel(risk) && !(e.entraRiskCache != nil && risk == "none") {
 				log.Printf("[CA] Agent risk unavailable: %s", spiffeID)
 				return &Decision{
 					Action: ActionDeny, Reason: "agent_risk_unavailable",

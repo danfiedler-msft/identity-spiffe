@@ -65,11 +65,14 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 type identityFixture struct {
-	key       *rsa.PrivateKey
-	mu        sync.Mutex
-	policies  any
-	outage    bool
-	oidcCalls int
+	key        *rsa.PrivateKey
+	mu         sync.Mutex
+	policies   any
+	outage     bool
+	oidcCalls  int
+	riskLevel  string
+	riskStatus int
+	riskCalls  int
 }
 
 func newIdentityFixture(t *testing.T) *identityFixture {
@@ -100,6 +103,14 @@ func newIdentityFixture(t *testing.T) *identityFixture {
 				return
 			}
 			response = map[string]any{"value": f.policies}
+		case "/beta/identityProtection/riskyAgents/11111111-1111-4111-8111-111111111111":
+			f.riskCalls++
+			if f.riskStatus != 0 && f.riskStatus != http.StatusOK {
+				w.WriteHeader(f.riskStatus)
+				_, _ = w.Write([]byte(`{"error":"fixture risk unavailable"}`))
+				return
+			}
+			response = map[string]any{"id": "11111111-1111-4111-8111-111111111111", "riskLevel": f.riskLevel}
 		default:
 			t.Errorf("unexpected local fixture route")
 			w.WriteHeader(http.StatusNotFound)
@@ -197,7 +208,7 @@ func basePolicy() rbac.Policy {
 	}
 }
 
-func engine(t *testing.T, p rbac.Policy, validator oauth.JWTValidator, risk *rbac.RiskStore, tags *rbac.TagStore, cache *ca.PolicyCache) *rbac.Engine {
+func engine(t *testing.T, p rbac.Policy, validator oauth.JWTValidator, risk *rbac.RiskStore, tags *rbac.TagStore, cache *ca.PolicyCache, opts ...rbac.EngineOption) *rbac.Engine {
 	t.Helper()
 	data, err := yaml.Marshal(p)
 	must(t, data, err)
@@ -205,7 +216,7 @@ func engine(t *testing.T, p rbac.Policy, validator oauth.JWTValidator, risk *rba
 	if err := store.LoadFromBytes(data); err != nil {
 		t.Fatal("fixture policy rejected:", err)
 	}
-	return rbac.NewEngine(store, validator, risk, tags, rbac.WithCAPolicyCache(cache))
+	return rbac.NewEngine(store, validator, risk, tags, append(opts, rbac.WithCAPolicyCache(cache))...)
 }
 
 type certificateAuthority struct {

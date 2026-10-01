@@ -489,7 +489,7 @@ class PolicyService:
         allowed.append(control_plane_id)
         return list(dict.fromkeys(allowed))
 
-    async def apply_preset(self, preset_name, request_id, risk_enforcement_enabled=False):
+    async def apply_preset(self, preset_name, request_id, risk_enforcement_enabled=False, risk_cache_seconds=90):
         # type: (str, str) -> Dict[str, Any]
         if preset_name == "hardened":
             preset_yaml = self.build_hardened_rbac_yaml()
@@ -500,6 +500,7 @@ class PolicyService:
 
         preset_doc = yaml.safe_load(preset_yaml)
         preset_doc["admin_governance"]["risk_enforcement"] = "data_plane" if risk_enforcement_enabled else "off"
+        preset_doc["admin_governance"]["risk_cache_seconds"] = risk_cache_seconds
         preset_yaml = yaml.safe_dump(preset_doc, sort_keys=False)
         target_mtls_ids = self.preset_mtls_ids(preset_name)
         health = await self.admin_client.get_json("health", request_id)

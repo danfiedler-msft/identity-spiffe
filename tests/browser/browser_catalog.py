@@ -31,8 +31,8 @@ def inventory():
         "Create and delete an isolated saved policy through the actual local store",
         "Scoped saved config round-trip succeeds and deletion is verified.", True)
     add("management.local.risk-settings", ["local"],
-        "Toggle both risk settings through the actual UI, API and persistent local store",
-        "Both switches save, survive reload, preserve the independent choice, and restore their original state.", True)
+        "Toggle risk settings and cache lifetime through the actual UI, API and persistent local store",
+        "Both switches and zero/positive cache lifetimes survive reload; help works on hover/focus; original values are restored.", True)
     add("management.live.execute-read", ["live"],
         "Explicitly authorized test caller executes GET /budget/read from the UI",
         "Configured test caller returns inner HTTP 200 and UI renders ALLOWED.", True)

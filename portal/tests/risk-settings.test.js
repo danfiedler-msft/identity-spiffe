@@ -18,7 +18,7 @@ for (const status of ['on', 'off', 'unavailable']) {
     vm.createContext(context);
     vm.runInContext(html.slice(start, end), context);
     context.updateRiskSignalBadge();
-    assert.equal(badge.textContent, `AGENT RISK SIGNAL ${status.toUpperCase()}`);
+    assert.equal(badge.textContent, `PORTAL RISK MONITORING ${status.toUpperCase()}`);
     assert.equal(badge.title, 'Risk status detail');
     assert.equal(badge.className, `sidebar-mode ${status === 'on' ? 'live' : 'degraded'}`);
   });
@@ -68,6 +68,7 @@ function renderRiskSettings(role = 'admin') {
       riskSettings: {
         signal: { enabled: true, status: 'unavailable', detail: 'Your tenant is not licensed for this feature.' },
         risk_enforcement_enabled: false, enforcement_control_supported: true,
+        entra_runtime_supported: true, risk_cache_seconds: 90,
       },
     },
     currentUser: { role },
@@ -86,7 +87,7 @@ test('Settings uses padded product cards, status badges, and accessible switches
   assert.equal(nodes.filter(n => n.className === 'card settings-card').length, 2);
   assert.ok(nodes.some(n => n.className === 'badge medium' && n.textContent === 'Unavailable'));
   assert.ok(nodes.some(n => n.className === 'policy-msg warn' && n.textContent === 'Your tenant is not licensed for this feature.'));
-  const switches = nodes.filter(n => n.tag === 'input');
+  const switches = nodes.filter(n => n.attributes.role === 'switch');
   assert.equal(switches.length, 2);
   assert.ok(switches.every(n => n.attributes.role === 'switch' && n.attributes['aria-label']));
   assert.equal(switches[0].checked, true);
@@ -95,6 +96,19 @@ test('Settings uses padded product cards, status badges, and accessible switches
 
 test('Settings switches remain disabled for viewers', () => {
   assert.ok(renderRiskSettings('viewer').filter(n => n.tag === 'input').every(n => n.disabled));
+});
+
+test('Settings explains runtime enforcement and zero cache lifetime in accessible info buttons', () => {
+  const nodes = renderRiskSettings();
+  const info = nodes.filter(n => n.className === 'settings-info');
+  assert.equal(info.length, 3);
+  assert.ok(info.every(n => n.tag === 'button' && n.attributes['aria-describedby']));
+  const tips = nodes.filter(n => n.attributes.role === 'tooltip');
+  assert.ok(tips.some(n => n.textContent.includes('Portal monitoring may be on or off independently')));
+  assert.ok(tips.some(n => n.textContent.includes('Set 0 to check Entra on every call')));
+  const input = nodes.find(n => n.id === 'risk-cache-seconds');
+  assert.equal(input.value, '90');
+  assert.equal(input.min, '0');
 });
 
 test('Settings API failures omit downstream response bodies', async () => {

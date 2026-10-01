@@ -8,7 +8,7 @@ import yaml
 
 from ..dependencies import admin_only, get_container, get_request_id, viewer_or_admin
 from ..errors import PortalError
-from ..schemas.api import RiskSettingUpdate
+from ..schemas.api import RiskCacheUpdate, RiskSettingUpdate
 
 _AGENT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 from ..schemas import (
@@ -41,6 +41,11 @@ async def set_risk_signal(payload: RiskSettingUpdate, request: Request, _user=De
 async def set_risk_enforcement(payload: RiskSettingUpdate, request: Request, _user=Depends(admin_only)):
     container = get_container(request)
     return await container.risk_settings_service.set_enforcement_enabled(payload.enabled, get_request_id(request))
+
+
+@router.put("/settings/risk-cache")
+async def set_risk_cache(payload: RiskCacheUpdate, request: Request, _user=Depends(admin_only)):
+    return await get_container(request).risk_settings_service.set_cache_seconds(payload.seconds, get_request_id(request))
 
 
 async def _resolve_external_invoke_url(container, agent_key):
@@ -225,6 +230,7 @@ async def get_preset_policies(request: Request, _user=Depends(viewer_or_admin)):
     permissive = _yaml.safe_load(permissive_yaml)
     for policy in (hardened, permissive):
         policy["admin_governance"]["risk_enforcement"] = mode
+        policy["admin_governance"]["risk_cache_seconds"] = preferences.get("risk_cache_seconds", 90)
     return {
         "hardened": _yaml.safe_dump(hardened, sort_keys=False),
         "permissive": _yaml.safe_dump(permissive, sort_keys=False),
@@ -239,6 +245,7 @@ async def apply_preset_policy(preset_name: str, request: Request, _user=Depends(
     preferences = await container.risk_settings_service.preferences()
     return await container.policy_service.apply_preset(
         preset_name, get_request_id(request), preferences.get("risk_enforcement_enabled", False),
+        preferences.get("risk_cache_seconds", 90),
     )
 
 

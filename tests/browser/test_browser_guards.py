@@ -148,6 +148,17 @@ class BrowserGuardTests(unittest.TestCase):
         self.assertTrue(allowed("/api/policy-configs/browser-scoped", "DELETE", None,
                                 role="admin", saved_name="browser-scoped"))
 
+    def test_cache_mutations_require_local_admin_scope_and_exact_integer_payload(self):
+        allowed = self.guards.allowed_write
+        path = "/api/settings/risk-cache"
+        for seconds in (0, 90, 120):
+            body = json.dumps({"seconds": seconds})
+            self.assertTrue(allowed(path, "PUT", body, role="admin", settings_mutation=True))
+            self.assertFalse(allowed(path, "PUT", body, role="admin"))
+            self.assertFalse(allowed(path, "PUT", body, role="viewer", settings_mutation=True))
+        for body in ('{"seconds":true}', '{"seconds":-1}', '{"seconds":1.5}', '{"seconds":"90"}', '{"seconds":90,"extra":true}'):
+            self.assertFalse(allowed(path, "PUT", body, role="admin", settings_mutation=True))
+
     def test_unsafe_inherited_browser_debugging_is_rejected(self):
         self.assertTrue(hasattr(self.guards, "validate_debug_environment"))
         self.guards.validate_debug_environment({})

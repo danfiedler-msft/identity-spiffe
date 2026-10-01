@@ -76,6 +76,13 @@ applies the same risk-policy availability distinction to direct A2A calls.
   missing evidence and initial `previous_level` as `unknown`, never `low`.
   An authenticated explicit low-risk signal is required to permit low risk;
   a process restart does not manufacture one.
+- Production Go gateways use their own Entra risk cache, not the portal's
+  monitoring cache. `risk_cache_seconds` defaults to 90; zero fetches on every
+  governed call. Evidence at the age limit is expired. A failed required refresh
+  invalidates it; missing/404/mismatched/invalid responses deny. SPIFFE `/aid/`
+  identity must match policy Entra metadata, and broad prefixes cannot stand in
+  for a single identity. Explicit Entra `none` is accepted; manual evidence may
+  increase risk but cannot clear Entra risk or act as a safe fallback.
 - `CA_RISK_PROVIDER=sidecar` remains explicitly separate from `entra` in Python.
   Entra mode never uses sidecar fallback evidence. A Graph response must include
   a recognized `riskLevel` (`none`, `low`, `medium`, or `high`) before

@@ -86,6 +86,9 @@ func (c *GraphClient) getToken() (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", fmt.Errorf("token response parse failed: %w", err)
 	}
+	if result.AccessToken == "" || result.ExpiresIn <= 0 {
+		return "", fmt.Errorf("token response has no valid access token or lifetime")
+	}
 
 	c.token = result.AccessToken
 	// Refresh 60 seconds before expiry

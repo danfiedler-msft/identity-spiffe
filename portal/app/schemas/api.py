@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, StrictInt
 
 
 class HttpMethod(str, Enum):
@@ -42,6 +42,10 @@ class MTLSPolicyUpdate(BaseModel):
 
 class RiskSettingUpdate(BaseModel):
     enabled: StrictBool
+
+
+class RiskCacheUpdate(BaseModel):
+    seconds: StrictInt = Field(ge=0, le=9223372036)
 
 
 class PolicyConfigCreate(BaseModel):

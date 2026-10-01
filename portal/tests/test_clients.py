@@ -137,6 +137,7 @@ class TestCAService(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(),
         )
         service._resolve_agent_oid = lambda _spiffe_id: "agent-id"
+        service.risk_settings_service = SimpleNamespace(signal_enabled=AsyncMock(return_value=True))
 
         result = await service.update_agent_risk(
             "spiffe://example/agent",
@@ -146,6 +147,7 @@ class TestCAService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["risk_provider"], "sidecar")
         graph_client.push_agent_risk.assert_not_awaited()
+        service.risk_settings_service.signal_enabled.assert_not_awaited()
 
 
 class TestAgentInvokerClient(unittest.IsolatedAsyncioTestCase):

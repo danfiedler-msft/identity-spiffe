@@ -41,7 +41,7 @@ class CAService:
         signal = None
         if self.risk_settings_service is not None:
             signal = await self.risk_settings_service.signal_status()
-            risk_provider = "entra" if signal["enabled"] else "sidecar"
+            risk_provider = risk_data.get("source") or ("entra" if signal["enabled"] else "sidecar")
             risky_agents = signal["risks"]
         else:
             risk_provider = self.settings.ca_risk_provider
@@ -82,9 +82,11 @@ class CAService:
             entra_risk = entra_risk_states.get(agent_key, {})
             entra_risk_level = entra_risk.get("risk_level", "unknown")
             risk_in_sync = (
-                current_risk in ("low", "medium", "high")
-                if risk_provider == "sidecar"
-                else current_risk in ("low", "medium", "high") and (
+                current_risk in ("none", "low", "medium", "high")
+                if risk_provider == "sidecar" or risk_data.get("source") == "entra"
+                else current_risk in ("none", "low", "medium", "high") and (
+                    (current_risk == "none" and entra_risk_level == "none")
+                    or
                     (current_risk == "low" and entra_risk_level in ("none", "low"))
                     or current_risk == entra_risk_level
                 )
@@ -129,8 +131,6 @@ class CAService:
     async def update_agent_risk(self, spiffe_id, risk_level, request_id):
         # type: (str, str, str) -> Dict[str, Any]
         risk_provider = self.settings.ca_risk_provider
-        if self.risk_settings_service is not None:
-            risk_provider = "entra" if await self.risk_settings_service.signal_enabled() else "sidecar"
         entra_result = None
         if risk_provider == "entra":
             agent_oid = self._resolve_agent_oid(spiffe_id)

@@ -27,7 +27,9 @@ External boundaries are deliberately mocked:
 
 `browser.management.local.risk-settings` clicks both Settings switches, checks
 the actual authenticated PUT responses, reloads the page to verify persistence
-and independent choices, and restores the original values. Navigation cases
+and independent choices, saves both zero and positive gateway cache lifetimes,
+checks explanatory info buttons on hover and keyboard focus, and restores
+the original values. Navigation cases
 also cover Settings, viewer-disabled controls, and backend write authorization.
 This local case uses real file persistence, not Azure Blob Storage. The portal
 component suite separately exercises the real Azure SDK upload path and ETag

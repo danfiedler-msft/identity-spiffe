@@ -292,6 +292,18 @@ body { font-family: var(--font); background: var(--bg); color: var(--text-0); mi
 .settings-switch input:disabled { cursor: not-allowed; }
 .settings-switch input:disabled + .settings-track { opacity: 0.5; }
 .settings-note { margin-top: 16px; }
+.settings-info-wrap { display: inline-flex; position: relative; margin-left: 8px; vertical-align: middle; }
+.settings-info { width: 18px; height: 18px; padding: 0; border: 1px solid var(--text-3); border-radius: 50%; background: transparent; color: var(--text-2); font: 600 12px var(--font); cursor: help; }
+.settings-info:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.settings-tooltip { display: none; position: absolute; top: 26px; left: -12px; z-index: 20; width: min(320px, 70vw); padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 12px #0003; color: var(--text-1); font-size: 12px; font-weight: 400; line-height: 1.6; }
+.settings-info-wrap:hover .settings-tooltip, .settings-info-wrap:focus-within .settings-tooltip { display: block; }
+.settings-cache { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-light); }
+.settings-cache label { display: block; font-weight: 500; margin-bottom: 8px; }
+.settings-cache-row { display: flex; gap: 8px; }
+.settings-cache input { width: 120px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 2px; font: 13px var(--font); }
+.settings-cache input:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+.settings-cache button[type="submit"] { padding: 7px 16px; border: 1px solid var(--blue); border-radius: 2px; background: var(--blue); color: white; font: 13px var(--font); cursor: pointer; }
+.settings-cache :disabled { opacity: 0.6; cursor: not-allowed; }
 @media (max-width: 860px) { .settings-grid { grid-template-columns: 1fr; } }
 
 /* ── Buttons ── */
@@ -443,7 +455,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text-0); mi
     </div>
   </div>
   <div class="sidebar-mode live" id="status-dot">LIVE STATUS</div>
-  <div class="sidebar-mode degraded" id="risk-signal-status">AGENT RISK SIGNAL UNKNOWN</div>
+  <div class="sidebar-mode degraded" id="risk-signal-status">PORTAL RISK MONITORING UNKNOWN</div>
   <div class="audit-stream-status closed" id="audit-stream-status" title="Live audit stream">
     <span class="asd-dot"></span><span class="asd-label">Live logs idle</span>
   </div>
@@ -682,7 +694,7 @@ function updateRiskSignalBadge() {
   if (!badge) return;
   var status = signal ? signal.status : 'unknown';
   badge.className = 'sidebar-mode ' + (status === 'on' ? 'live' : 'degraded');
-  badge.textContent = 'AGENT RISK SIGNAL ' + status.toUpperCase();
+  badge.textContent = 'PORTAL RISK MONITORING ' + status.toUpperCase();
   badge.title = signal ? signal.detail : 'Risk signal status has not been checked';
 }
 
@@ -2610,6 +2622,15 @@ function render() {
 }
 
 function renderSettings(root) {
+  function info(name, text, id) {
+    var wrap = document.createElement('span'); wrap.className = 'settings-info-wrap';
+    var button = document.createElement('button'); button.className = 'settings-info'; button.type = 'button';
+    button.textContent = 'i'; button.setAttribute('aria-label', 'About ' + name);
+    button.setAttribute('aria-describedby', id);
+    var tooltip = document.createElement('span'); tooltip.className = 'settings-tooltip'; tooltip.id = id;
+    tooltip.setAttribute('role', 'tooltip'); tooltip.textContent = text;
+    wrap.appendChild(button); wrap.appendChild(tooltip); return wrap;
+  }
   var data = state.riskSettings;
   if (!data) {
     var card = document.createElement('div'); card.className = 'card settings-card';
@@ -2631,24 +2652,27 @@ function renderSettings(root) {
   var grid = document.createElement('div'); grid.className = 'settings-grid';
   [
     {
-      title: 'Entra agent risk signals', label: 'Read Entra agent risk signals',
-      description: 'Read agent risk ratings from Microsoft Entra. Missing ratings remain unknown.',
+      title: 'Portal risk monitoring', label: 'Show Entra risk in the portal',
+      description: 'Read Entra risk ratings for visibility. Gateway enforcement is controlled separately.',
+      help: 'This switch controls risk monitoring in the portal only. Turning it off does not stop the gateway from checking Entra risk when gateway enforcement is on. Monitoring does not modify Entra risk ratings or Conditional Access policies.',
       enabled: signal.enabled, path: '/settings/risk-signal',
       status: signal.status === 'on' ? 'On' : signal.status === 'off' ? 'Off' : 'Unavailable',
       notice: signal.status === 'unavailable' ? signal.detail : null,
     },
     {
-      title: 'Local risk enforcement', label: 'Enforce agent risk',
-      description: 'Block agent calls using risk evidence and Conditional Access rules. Other security controls remain active when this is off.',
+      title: 'Gateway risk enforcement', label: 'Enforce Entra risk at the gateway',
+      description: 'Check Entra risk when evaluating calls against enabled risk-blocking policies.',
+      help: 'When enabled, governed calls use Microsoft Entra risk ratings and the risk levels blocked by your enabled Conditional Access policies. Missing, invalid, or expired ratings cannot be treated as safe. Security Portal evidence can increase risk, but cannot clear Entra risk. Portal monitoring may be on or off independently. Turning this off skips only gateway risk checks; other configured security controls and tenant token-time policies remain active.',
       enabled: data.risk_enforcement_enabled, path: '/settings/risk-enforcement',
-      unsupported: !data.enforcement_control_supported,
+      unsupported: !data.enforcement_control_supported || (!data.entra_runtime_supported && !data.risk_enforcement_enabled),
       status: data.risk_enforcement_enabled === true ? 'On' : data.risk_enforcement_enabled === false ? 'Off' : 'Unavailable',
-      notice: data.enforcement_control_supported === false ? 'Update the platform to enable this control.' : null,
+      notice: !data.entra_runtime_supported ? 'Update the gateways to enable Entra runtime risk enforcement.' : null,
     },
-  ].forEach(function(setting) {
+  ].forEach(function(setting, index) {
     var card = document.createElement('div'); card.className = 'card settings-card';
     var header = document.createElement('div'); header.className = 'settings-card-header';
     var title = document.createElement('h3'); title.className = 'section-title'; title.textContent = setting.title;
+    title.appendChild(info(setting.title, setting.help, 'risk-setting-help-' + index));
     var badge = document.createElement('span');
     badge.className = 'badge ' + (setting.status === 'On' ? 'ok' : setting.status === 'Off' ? 'low' : 'medium');
     badge.textContent = setting.status;
@@ -2681,7 +2705,42 @@ function renderSettings(root) {
     var track = document.createElement('span'); track.className = 'settings-track';
     track.setAttribute('aria-hidden', 'true');
     toggle.appendChild(checkbox); toggle.appendChild(track); label.appendChild(toggle);
-    card.appendChild(label); grid.appendChild(card);
+    card.appendChild(label);
+    if (index === 1) {
+      var form = document.createElement('form'); form.className = 'settings-cache';
+      var cacheLabel = document.createElement('label'); cacheLabel.htmlFor = 'risk-cache-seconds';
+      cacheLabel.textContent = 'Entra risk cache lifetime (seconds)';
+      cacheLabel.appendChild(info('Entra risk cache lifetime',
+        'Default: 90 seconds. This is the maximum age of an Entra rating the gateway may reuse. After expiry, the next call must obtain fresh evidence. Set 0 to check Entra on every call, increasing latency and Graph API traffic. If a required lookup fails or returns no valid rating, the call is denied; expired or manually supplied safe ratings are not a fallback.',
+        'risk-cache-help'));
+      form.appendChild(cacheLabel);
+      var row = document.createElement('div'); row.className = 'settings-cache-row';
+      var input = document.createElement('input'); input.id = 'risk-cache-seconds'; input.type = 'number';
+      input.setAttribute('aria-label', 'Entra risk cache lifetime (seconds)');
+      input.min = '0'; input.max = '9223372036'; input.step = '1'; input.required = true;
+      input.value = data.risk_cache_seconds == null ? '90' : String(data.risk_cache_seconds);
+      input.setAttribute('aria-describedby', 'risk-cache-summary risk-cache-help');
+      input.disabled = !currentUser || currentUser.role !== 'admin' || !data.entra_runtime_supported;
+      var save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Save cache lifetime'; save.disabled = input.disabled;
+      row.appendChild(input); row.appendChild(save); form.appendChild(row);
+      var summary = document.createElement('p'); summary.id = 'risk-cache-summary'; summary.className = 'finding-desc';
+      summary.textContent = Number(input.value) === 0 ? 'Checks Entra on every call.' : 'Reuses Entra ratings for up to ' + input.value + ' seconds.';
+      input.oninput = function() {
+        summary.textContent = input.value === '0' ? 'Checks Entra on every call.' : 'Enter a whole number of seconds. Default: 90.';
+      };
+      form.appendChild(summary);
+      form.onsubmit = function(event) {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        save.disabled = true; state.riskSettingsError = null;
+        api('/settings/risk-cache', { method: 'PUT', body: JSON.stringify({ seconds: Number(input.value) }), hideErrorDetails: true })
+          .then(function() { return Promise.all([loadRiskSettings(), loadPolicy()]); })
+          .catch(function(err) { state.riskSettingsError = err.message; })
+          .finally(render);
+      };
+      card.appendChild(form);
+    }
+    grid.appendChild(card);
   });
   root.appendChild(grid);
   var note = document.createElement('p'); note.className = 'finding-desc settings-note';

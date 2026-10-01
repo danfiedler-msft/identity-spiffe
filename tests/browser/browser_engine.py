@@ -202,7 +202,12 @@ def management_navigation(page):
                     expect(switches.nth(index)).to_be_disabled()
                 else:
                     expect(switches.nth(index)).to_be_enabled()
-            for endpoint in ("/api/settings/risk-signal", "/api/settings/risk-enforcement"):
+            cache = page.get_by_label("Entra risk cache lifetime (seconds)", exact=True)
+            if role == "viewer":
+                expect(cache).to_be_disabled()
+            else:
+                expect(cache).to_be_enabled()
+            for endpoint in ("/api/settings/risk-signal", "/api/settings/risk-enforcement", "/api/settings/risk-cache"):
                 require(request_summary(page, "management", endpoint, method="PUT", payload={})["status"]
                         == (403 if role == "viewer" else 422))
     # Navigate via the app's own resource card, then browser Back.
@@ -268,17 +273,17 @@ def risk_settings_roundtrip(page):
             });
             const data = await response.json();
             return {status: response.status, signal: data.signal && data.signal.enabled,
-                    enforcement: data.risk_enforcement_enabled};
+                    enforcement: data.risk_enforcement_enabled, cache: data.risk_cache_seconds};
         }""")
         require(result["status"] == 200 and type(result.get("signal")) is bool
-                and type(result.get("enforcement")) is bool)
-        return {"signal": result["signal"], "enforcement": result["enforcement"]}
+                and type(result.get("enforcement")) is bool and type(result.get("cache")) is int)
+        return {"signal": result["signal"], "enforcement": result["enforcement"], "cache": result["cache"]}
 
     original = preferences()
     current = dict(original)
     controls = (
-        ("signal", "Read Entra agent risk signals", "/api/settings/risk-signal"),
-        ("enforcement", "Enforce agent risk", "/api/settings/risk-enforcement"),
+        ("signal", "Show Entra risk in the portal", "/api/settings/risk-signal"),
+        ("enforcement", "Enforce Entra risk at the gateway", "/api/settings/risk-enforcement"),
     )
     try:
         for key, name, endpoint in controls:
@@ -308,10 +313,33 @@ def risk_settings_roundtrip(page):
                 expect(page.get_by_role("switch", name=name, exact=True)).not_to_be_checked()
             require(preferences() == current)
             expect(page.locator(".policy-msg.err")).to_have_count(0)
+        for seconds in (0, 120):
+            page.get_by_label("Entra risk cache lifetime (seconds)", exact=True).fill(str(seconds))
+            with page.expect_response(lambda response: urlsplit(response.url).path == "/api/settings/risk-cache"
+                                      and response.request.method == "PUT") as response:
+                page.get_by_role("button", name="Save cache lifetime", exact=True).click()
+            require(response.value.status == 200)
+            current["cache"] = seconds
+            page.wait_for_function("(seconds) => state.riskSettings.risk_cache_seconds === seconds", arg=seconds)
+            require(preferences() == current)
+            page.reload(wait_until="domcontentloaded")
+            assert_access(page, "management", "admin", live=False)
+            page.locator('.nav-btn[data-tab="settings"]').click()
+            expect(page.locator("#risk-cache-seconds")).to_have_value(str(seconds))
+            require(preferences() == current)
+        info = page.get_by_role("button", name="About Entra risk cache lifetime", exact=True)
+        info.hover()
+        expect(page.locator("#risk-cache-help")).to_be_visible()
+        expect(page.locator("#risk-cache-help")).to_contain_text("Set 0 to check Entra on every call")
+        page.mouse.move(0, 0)
+        info.focus()
+        expect(page.locator("#risk-cache-help")).to_be_visible()
     finally:
         for key, _name, endpoint in controls:
             require(request_summary(page, "management", endpoint, method="PUT",
                                     payload={"enabled": original[key]})["status"] == 200)
+        require(request_summary(page, "management", "/api/settings/risk-cache", method="PUT",
+                                payload={"seconds": original["cache"]})["status"] == 200)
         if preferences() != original:
             raise CaseProblem("FAIL", "cleanup_failed")
     return {"http_status": 200, "cleanup_verified": True}

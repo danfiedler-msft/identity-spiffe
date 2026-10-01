@@ -191,6 +191,7 @@ class TestRiskSettings(unittest.IsolatedAsyncioTestCase):
     async def test_enabling_without_control_plane_evidence_does_not_lock_out_management(self):
         service = self.make_service()
         service.policy_service.get_control_plane_spiffe_id = lambda: "spiffe://test/admin"
+        service.policy_service.admin_client.get_json.return_value["entra_risk_enforcement_supported"] = True
         with self.assertRaises(PortalError) as ctx:
             await service.set_enforcement_enabled(True, "request-id")
         self.assertEqual(ctx.exception.error_code, "risk_enforcement_not_ready")
@@ -203,8 +204,8 @@ class TestRiskSettings(unittest.IsolatedAsyncioTestCase):
 
         async def get_json(path, request_id):
             return {
-                "health": {"risk_enforcement_control_supported": True},
-                "agent-risk": {"risks": {"spiffe://test/admin": "low"}},
+                "health": {"risk_enforcement_control_supported": True, "entra_risk_enforcement_supported": True},
+                "entra-risk?spiffe_id=spiffe%3A%2F%2Ftest%2Fadmin": {"risks": {"spiffe://test/admin": "low"}},
                 "ca-policy-effective": {"ready": True, "blocked_risk_levels": ["high"]},
             }[path]
 
@@ -213,3 +214,49 @@ class TestRiskSettings(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["risk_enforcement_enabled"])
         text, _ = service.policy_service.put_policy.await_args.args
         self.assertEqual(yaml.safe_load(text)["admin_governance"]["risk_enforcement"], "data_plane")
+
+    async def test_cache_default_is_90_and_zero_is_persisted_and_applied(self):
+        service = self.make_service([{"entra_signal_enabled": False, "risk_enforcement_enabled": False}])
+        service.policy_service.admin_client.get_json.return_value["entra_risk_enforcement_supported"] = True
+        self.assertEqual((await service.get_settings("request-id"))["risk_cache_seconds"], 90)
+        await service.set_cache_seconds(0, "request-id")
+        service.store.write_configs.assert_awaited_once_with([{
+            "entra_signal_enabled": False, "risk_enforcement_enabled": False, "risk_cache_seconds": 0,
+        }])
+        text, _ = service.policy_service.put_policy.await_args.args
+        governance = yaml.safe_load(text)["admin_governance"]
+        self.assertEqual(governance["risk_cache_seconds"], 0)
+        self.assertEqual(governance["risk_enforcement"], "off")
+
+    async def test_cache_update_failure_restores_preferences(self):
+        previous = {"entra_signal_enabled": False, "risk_enforcement_enabled": False, "risk_cache_seconds": 90}
+        service = self.make_service([previous])
+        service.policy_service.admin_client.get_json.return_value["entra_risk_enforcement_supported"] = True
+        service.policy_service.put_policy.side_effect = PortalError(502, "failed", "Gateway unavailable")
+        with self.assertRaises(PortalError):
+            await service.set_cache_seconds(0, "request-id")
+        service.store.write_configs.assert_awaited_with([previous])
+
+    async def test_cache_reconciles_after_service_recreation(self):
+        service = self.make_service([{"entra_signal_enabled": False, "risk_cache_seconds": 0}])
+        service.policy_service.admin_client.get_json.return_value["entra_risk_enforcement_supported"] = True
+        await service.get_settings("request-id")
+        text, _ = service.policy_service.put_policy.await_args.args
+        self.assertEqual(yaml.safe_load(text)["admin_governance"]["risk_cache_seconds"], 0)
+
+    async def test_cache_rejects_invalid_values_and_old_gateways(self):
+        service = self.make_service()
+        for value in (-1, True, 0.5, "90", 9223372037):
+            with self.assertRaises(PortalError):
+                await service.set_cache_seconds(value, "request-id")
+        with self.assertRaises(PortalError) as ctx:
+            await service.set_cache_seconds(90, "request-id")
+        self.assertEqual(ctx.exception.error_code, "sidecar_upgrade_required")
+        service.store.write_configs.assert_not_awaited()
+
+    async def test_enabling_does_not_accept_manual_risk_on_old_gateway(self):
+        service = self.make_service()
+        with self.assertRaises(PortalError) as ctx:
+            await service.set_enforcement_enabled(True, "request-id")
+        self.assertEqual(ctx.exception.error_code, "sidecar_upgrade_required")
+        service.store.write_configs.assert_not_awaited()

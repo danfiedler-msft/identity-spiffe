@@ -159,13 +159,17 @@ def allowed_write(path, method, body, *, role, execute_payload=None, saved_name=
         return False
     if role in {"admin", "viewer"} and payload == {} and (path, method) in {
             ("/api/execute", "POST"), ("/set-risk", "PUT"),
-            ("/api/settings/risk-signal", "PUT"), ("/api/settings/risk-enforcement", "PUT")}:
+            ("/api/settings/risk-signal", "PUT"), ("/api/settings/risk-enforcement", "PUT"),
+            ("/api/settings/risk-cache", "PUT")}:
         return True
     if role != "admin":
         return False
     if settings_mutation is True and method == "PUT" and path in {
             "/api/settings/risk-signal", "/api/settings/risk-enforcement"}:
         return isinstance(payload, dict) and set(payload) == {"enabled"} and type(payload["enabled"]) is bool
+    if settings_mutation is True and (path, method) == ("/api/settings/risk-cache", "PUT"):
+        return (isinstance(payload, dict) and set(payload) == {"seconds"}
+                and type(payload["seconds"]) is int and 0 <= payload["seconds"] <= 9223372036)
     if execute_payload and (path, method) == ("/api/execute", "POST"):
         return payload == execute_payload
     if saved_name and re.fullmatch(r"browser-[a-z0-9-]+", saved_name):

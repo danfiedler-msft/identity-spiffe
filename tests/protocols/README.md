@@ -106,6 +106,11 @@ Coverage includes:
 - Actual implementation precedence: CA admin governance runs before RBAC,
   RBAC denial before JWT validation; tests also assert OAuth discovery was
   never called when an earlier layer denies.
+- `EntraRisk` exercises production Graph reads and gateway decisions: Entra high
+  overrides manual low, explicit none, licensing/permission errors, missing and
+  invalid ratings, valid cache reuse, zero-lifetime lookups, and failed refreshes
+  without a manual-safe fallback. Graph responses are loopback fixtures, not
+  evidence of tenant licensing or a deployed rollout.
 - Locally supported CA risk conditions: scalar/array risk levels, enabled
   block policies, disabled and report-only policies, non-block grant controls,
   unions, explicit low/medium/high inputs, initial outage, cached outage, tag
