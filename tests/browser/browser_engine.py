@@ -38,6 +38,7 @@ TABS = {
     "policy": ("Policy Editor", "/api/policy"),
     "health": ("System Health", "/api/health"),
     "oauth": ("Enforcement Layers", "/api/oauth-status"),
+    "settings": ("Settings", "/api/settings/risk"),
 }
 
 
@@ -189,6 +190,18 @@ def management_navigation(page):
             page.locator("#add-mtls-input").fill("spiffe://browser.test/not-submitted")
         if tab == "logs":
             page.locator('.logs-toolbar input[type="text"]').fill("browser-no-match")
+        if tab == "settings":
+            switches = page.get_by_role("switch")
+            expect(switches).to_have_count(2)
+            role = page.evaluate("currentUser.role")
+            for index in range(2):
+                if role == "viewer":
+                    expect(switches.nth(index)).to_be_disabled()
+                else:
+                    expect(switches.nth(index)).to_be_enabled()
+            for endpoint in ("/api/settings/risk-signal", "/api/settings/risk-enforcement"):
+                require(request_summary(page, "management", endpoint, method="PUT", payload={})["status"]
+                        == (403 if role == "viewer" else 422))
     # Navigate via the app's own resource card, then browser Back.
     page.locator('.nav-btn[data-tab="overview"]').click()
     card = page.locator('.agent-id-card[role="button"]').first
@@ -242,6 +255,63 @@ def execute_read(page, caller_name, denied=False):
     expect(page.locator(".result-header .badge")).to_have_text(
         "403 RBAC DENY" if denied else "200 ALLOWED")
     return {"http_status": expected}
+
+
+def risk_settings_roundtrip(page):
+    def preferences():
+        result = page.evaluate("""async () => {
+            const response = await fetch('/api/settings/risk', {
+                headers: {Authorization: 'Bearer ' + window._accessToken}, redirect: 'error'
+            });
+            const data = await response.json();
+            return {status: response.status, signal: data.signal && data.signal.enabled,
+                    enforcement: data.risk_enforcement_enabled};
+        }""")
+        require(result["status"] == 200 and type(result.get("signal")) is bool
+                and type(result.get("enforcement")) is bool)
+        return {"signal": result["signal"], "enforcement": result["enforcement"]}
+
+    original = preferences()
+    current = dict(original)
+    controls = (
+        ("signal", "Read Entra agent risk signals", "/api/settings/risk-signal"),
+        ("enforcement", "Enforce agent risk", "/api/settings/risk-enforcement"),
+    )
+    try:
+        for key, name, endpoint in controls:
+            page.locator('.nav-btn[data-tab="settings"]').click()
+            toggle = page.get_by_role("switch", name=name, exact=True)
+            expect(toggle).to_be_enabled()
+            desired = not original[key]
+            if not desired:
+                page.once("dialog", lambda dialog: dialog.accept())
+            with page.expect_response(lambda response: urlsplit(response.url).path == endpoint
+                                      and response.request.method == "PUT") as response:
+                toggle.set_checked(desired)
+            require(response.value.status == 200)
+            current[key] = desired
+            page.wait_for_function(
+                "(expected) => state.riskSettings && state.riskSettings.signal.enabled === expected.signal"
+                " && state.riskSettings.risk_enforcement_enabled === expected.enforcement",
+                arg=current,
+            )
+            require(preferences() == current)
+            page.reload(wait_until="domcontentloaded")
+            assert_access(page, "management", "admin", live=False)
+            page.locator('.nav-btn[data-tab="settings"]').click()
+            if desired:
+                expect(page.get_by_role("switch", name=name, exact=True)).to_be_checked()
+            else:
+                expect(page.get_by_role("switch", name=name, exact=True)).not_to_be_checked()
+            require(preferences() == current)
+            expect(page.locator(".policy-msg.err")).to_have_count(0)
+    finally:
+        for key, _name, endpoint in controls:
+            require(request_summary(page, "management", endpoint, method="PUT",
+                                    payload={"enabled": original[key]})["status"] == 200)
+        if preferences() != original:
+            raise CaseProblem("FAIL", "cleanup_failed")
+    return {"http_status": 200, "cleanup_verified": True}
 
 
 def saved_policy(page, name):
@@ -326,7 +396,7 @@ def local_target(portal):
 
 
 def route_boundary(context, origin, role, local, execute_payload=None, saved_name=None,
-                   human_login=False, on_block=None):
+                   human_login=False, on_block=None, settings_mutation=False):
     if len(context.pages) != 1:
         raise ValueError("Create exactly one blank page before installing its network boundary")
     blocked_writes = []
@@ -373,7 +443,8 @@ def route_boundary(context, origin, role, local, execute_payload=None, saved_nam
             permitted = request_origin == origin and (
                 request["method"] in ("GET", "HEAD") or
                 allowed_write(path, request["method"], request.get("postData"), role=role,
-                              execute_payload=execute_payload, saved_name=saved_name))
+                              execute_payload=execute_payload, saved_name=saved_name,
+                              settings_mutation=local and settings_mutation))
             if not local and request_origin in identity_origins:
                 permitted = True
             if not permitted:
@@ -430,6 +501,7 @@ def run_cases(cases, profile, config):
                 entry, origin = ({}, targets[portal]) if local else target_config(config, portal)
                 execute = ".execute-" in case["id"]
                 saved = case["id"].endswith(".saved-policy")
+                settings_case = case["id"].endswith(".risk-settings")
                 permit = {}
                 if case["mutation"] and not local:
                     permit = entry.get("execute_read", {})
@@ -457,7 +529,8 @@ def run_cases(cases, profile, config):
                         restore_session(context, session)
                     page = context.new_page()
                     blocked_writes = route_boundary(context, origin, role, local,
-                                                    execute_payload=execute_payload, saved_name=saved_name)
+                                                    execute_payload=execute_payload, saved_name=saved_name,
+                                                    settings_mutation=settings_case)
                     errors = []
                     page.on("pageerror", lambda _error: errors.append(True))
                     page.goto(origin + "/", wait_until="domcontentloaded")
@@ -470,6 +543,8 @@ def run_cases(cases, profile, config):
                         evidence.update(execute_read(page, name, denied=denied))
                     elif saved:
                         evidence.update(saved_policy(page, saved_name))
+                    elif settings_case:
+                        evidence.update(risk_settings_roundtrip(page))
                     require(not errors and not blocked_writes)
             except CaseProblem as exc:
                 status, code = exc.status, exc.code

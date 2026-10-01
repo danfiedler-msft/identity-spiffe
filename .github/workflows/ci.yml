@@ -64,10 +64,17 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install fastapi httpx pyyaml uvicorn
+        run: pip install -r portal/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Run portal tests
         run: python -m unittest discover -s portal -p 'test_*.py' -v
+
+      - name: Run portal frontend tests
+        run: node --test portal/tests/*.test.js
 
   agents-ci:
     name: Agents (import, health, auth tests)

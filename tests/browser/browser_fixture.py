@@ -54,6 +54,7 @@ class ControlPlaneBoundary:
         self.policy = {
             "version": "browser-fixture", "trust_domain": "browser.test",
             "default_action": "deny",
+            "admin_governance": {"enabled": True, "risk_enforcement": "off"},
             "policies": [
                 {"name": key, "spiffe_id": value["spiffe_id"],
                  "rules": [{"path": "/budget/read", "methods": ["GET"], "action": "allow"}]}
@@ -73,17 +74,23 @@ class ControlPlaneBoundary:
                 "http_status": 200 if allowed else 403,
                 "layer": "rbac", "response": {"fixture": True, "allowed": allowed},
             })
+        if request.method == "PUT" and request.url.path == "/admin/policy":
+            import yaml
+            self.policy = yaml.safe_load(request.content)
+            return httpx.Response(200, json={"status": "updated"})
         payloads = {
             "/admin/health": {"status": "ok", "spiffe_id": AGENTS["budget-backend"]["spiffe_id"],
-                              "svid_ready": True, "uptime_seconds": 100},
+                              "svid_ready": True, "uptime_seconds": 100,
+                              "risk_enforcement_control_supported": True},
             "/admin/policy": self.policy,
             "/admin/mtls-policy": {"allowed_ids": [a["spiffe_id"] for a in AGENTS.values()]},
             "/admin/audit": {"entries": []},
             "/admin/metrics": {"requests_total": 0},
             "/admin/oauth-status": {"enabled": True, "validator_ready": True},
-            "/admin/agent-risk": {"risks": {}, "count": 0},
+            "/admin/agent-risk": {"risks": {"spiffe://browser.test/control": "low"}, "count": 1},
             "/admin/agent-tags": {"tags": {}},
-            "/admin/ca-policy-effective": {"policies": [], "source": "browser-fixture"},
+            "/admin/ca-policy-effective": {"policies": [], "source": "browser-fixture",
+                                           "ready": True, "blocked_risk_levels": ["high"]},
         }
         if request.method == "GET" and request.url.path in payloads:
             return httpx.Response(200, json=payloads[request.url.path])

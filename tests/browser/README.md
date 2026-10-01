@@ -25,6 +25,15 @@ External boundaries are deliberately mocked:
   fixture. No local case is evidence of real Entra, Graph, SPIRE, mTLS, workload
   JWT, Azure availability, or production security policy.
 
+`browser.management.local.risk-settings` clicks both Settings switches, checks
+the actual authenticated PUT responses, reloads the page to verify persistence
+and independent choices, and restores the original values. Navigation cases
+also cover Settings, viewer-disabled controls, and backend write authorization.
+This local case uses real file persistence, not Azure Blob Storage. The portal
+component suite separately exercises the real Azure SDK upload path and ETag
+headers in `portal/tests/test_storage.py`; approved live Blob round trips are
+still required to establish deployed managed-identity write access.
+
 Every passing row includes boolean evidence labels identifying these boundaries.
 The actual UI still says "live" for execute results because the app has no demo
 mode; **that UI wording is not the harness evidence classification**.

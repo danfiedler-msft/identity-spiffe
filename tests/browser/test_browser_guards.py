@@ -9,6 +9,15 @@ import unittest
 
 
 class BrowserGuardTests(unittest.TestCase):
+    def test_risk_setting_writes_require_scoped_admin_and_exact_boolean_payload(self):
+        allowed = self.guards.allowed_write
+        for path in ("/api/settings/risk-signal", "/api/settings/risk-enforcement"):
+            self.assertFalse(allowed(path, "PUT", '{"enabled":false}', role="admin"))
+            self.assertFalse(allowed(path, "PUT", '{"enabled":false}', role="viewer", settings_mutation=True))
+            self.assertTrue(allowed(path, "PUT", '{"enabled":false}', role="admin", settings_mutation=True))
+            for body in ('{"enabled":"false"}', '{"enabled":0}', '{"enabled":true,"extra":true}'):
+                self.assertFalse(allowed(path, "PUT", body, role="admin", settings_mutation=True))
+
     def setUp(self):
         path = Path(__file__).with_name("browser_guards.py")
         self.assertTrue(path.exists(), "browser session/report guards must be implemented")
