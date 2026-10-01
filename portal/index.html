@@ -778,6 +778,7 @@ var AGENTS = {
   'budget-backend':  { icon: '\u{1F512}', name: 'BudgetBackend',  role: 'Protected MCP Server',  color: '#5c2d91', spiffe: 'spiffe://aim.microsoft.com/ests/bp/placeholder/aid/budget-backend' },
   'budget-approval': { icon: '\u2705',    name: 'BudgetApproval', role: 'Full-access Caller',    color: '#107c10', spiffe: 'spiffe://aim.microsoft.com/ests/bp/placeholder/aid/budget-approval' },
 };
+var BUILT_IN_AGENT_IDS = Object.keys(AGENTS);
 
 // Callers = all agents except resources (Protected MCP Server role). Rebuilt when config changes.
 function getCallers() {
@@ -850,7 +851,12 @@ function loadConfig() {
   return api('/config').then(function(cfg) {
     state.config = cfg;
     updateStatusBadge();
-    // Merge any dynamically-added agents from config into the AGENTS map
+    Object.keys(AGENTS).forEach(function(id) {
+      if (BUILT_IN_AGENT_IDS.indexOf(id) === -1 && (!cfg.agents || !cfg.agents[id])) {
+        delete AGENTS[id];
+      }
+    });
+    // Merge dynamically discovered agents from config into the AGENTS map.
     var dynColors = ['#0277bd', '#6a1b9a', '#e65100', '#2e7d32', '#ad1457'];
     var dynIcons  = ['\u{1F50D}', '\u{1F4CB}', '\u{1F4B0}', '\u{1F4E6}', '\u{1F916}'];
     var dynIdx = 0;
