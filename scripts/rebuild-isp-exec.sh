@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild only the isp-exec-20260901 deployment. Run from the original azd checkout.
+# Rebuild only the isp-exec-20260901 deployment.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -16,18 +16,6 @@ for tool in az azd python3; do
     fi
 done
 
-if [ ! -f ".azure/$ENV_NAME/.env" ]; then
-    echo "The original .azure/$ENV_NAME/.env is missing. Run from the work checkout; nothing was deleted." >&2
-    exit 1
-fi
-if [ "$(azd env get-values | grep -E '^AZURE_ENV_NAME=' | cut -d= -f2- | tr -d '\"')" != "$ENV_NAME" ]; then
-    echo "Select the original azd environment first: azd env select $ENV_NAME" >&2
-    exit 1
-fi
-if [ "$(azd env get-values | grep -E '^AZURE_SUBSCRIPTION_ID=' | cut -d= -f2- | tr -d '\"')" != "$SUBSCRIPTION" ]; then
-    echo "The azd environment targets a different subscription; nothing was deleted." >&2
-    exit 1
-fi
 if [ "$(git branch --show-current)" != main ]; then
     echo "Switch to the main checkout first; nothing was deleted." >&2
     exit 1
@@ -37,6 +25,10 @@ if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
     echo "Local main is not up to date. Fast-forward it before running this script." >&2
     exit 1
 fi
+if [ -n "$(git status --porcelain)" ]; then
+    echo "The checkout is dirty. Commit or stash changes before rebuilding; nothing was deleted." >&2
+    exit 1
+fi
 
 echo "Signing in with the MFA claim required by the Azure management API..."
 az login --tenant "$TENANT" \
@@ -44,8 +36,31 @@ az login --tenant "$TENANT" \
     --claims-challenge 'eyJhY2Nlc3NfdG9rZW4iOnsiYWNycyI6eyJlc3NlbnRpYWwiOnRydWUsInZhbHVlcyI6WyJwMSJdfX19' \
     -o none
 az account set --subscription "$SUBSCRIPTION"
+echo "Signing Azure Developer CLI into the same tenant..."
+azd auth login --tenant-id "$TENANT"
 if [ "$(az account show --query tenantId -o tsv)" != "$TENANT" ]; then
     echo "Wrong Azure tenant; nothing was deleted." >&2
+    exit 1
+fi
+
+if [ ! -f ".azure/$ENV_NAME/.env" ]; then
+    echo "Creating local azd environment $ENV_NAME..."
+    azd env new "$ENV_NAME" --subscription "$SUBSCRIPTION" --location westus
+else
+    azd env select "$ENV_NAME"
+fi
+azd env set AZURE_SUBSCRIPTION_ID "$SUBSCRIPTION"
+azd env set AZURE_TENANT_ID "$TENANT"
+azd env set AZURE_LOCATION westus
+azd env set ISP_ENV_SCOPE_MODE scoped
+azd env set ISP_ENV_SCOPE_KEY "$ENV_NAME"
+
+if [ "$(azd env get-values | grep -E '^AZURE_ENV_NAME=' | cut -d= -f2- | tr -d '\"')" != "$ENV_NAME" ]; then
+    echo "Could not select azd environment $ENV_NAME; nothing was deleted." >&2
+    exit 1
+fi
+if [ "$(azd env get-values | grep -E '^AZURE_SUBSCRIPTION_ID=' | cut -d= -f2- | tr -d '\"')" != "$SUBSCRIPTION" ]; then
+    echo "The azd environment targets a different subscription; nothing was deleted." >&2
     exit 1
 fi
 if [ "$(az group show -n "$RG" --query 'tags."azd-env-name"' -o tsv)" != "$ENV_NAME" ]; then
@@ -92,9 +107,11 @@ done
 echo "Target: $RG, 5 scoped Agent Identities and 3 scoped app registrations."
 echo "Shared Entra groups, provisioner, and CA policy will remain."
 echo "WARNING: all data in $RG, including the SPIRE CA and datastore, will be lost."
-echo "WARNING: a new sidecar starts with unknown risk; deployment health will remain failed"
-echo "         until trusted risk evidence is supplied. This script will not mark it low."
-read -r -p "Type $RG to delete it and redeploy: " confirmation
+echo "The deployment's verification phase will initialize and validate its test risk state."
+confirmation="${CONFIRM_REBUILD:-}"
+if [ "$confirmation" != "$RG" ]; then
+    read -r -p "Type $RG to delete it and redeploy: " confirmation
+fi
 if [ "$confirmation" != "$RG" ]; then
     echo "Cancelled; nothing was deleted."
     exit 1

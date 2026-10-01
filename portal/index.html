@@ -464,6 +464,11 @@ var _accessToken = null;
 var _sessionCheckInterval = null;
 var _healthCheckInterval = null;
 
+function selectedAccount() {
+  var accounts = msalInstance.getAllAccounts();
+  return msalInstance.getActiveAccount() || (accounts.length === 1 ? accounts[0] : null);
+}
+
 function escapeHtml(s) {
   var div = document.createElement('div');
   div.appendChild(document.createTextNode(s || ''));
@@ -491,10 +496,11 @@ function initAuth() {
     return msalInstance.handleRedirectPromise().then(function(resp) {
       if (resp) {
         _accessToken = resp.accessToken;
+        msalInstance.setActiveAccount(resp.account);
       }
-      var accounts = msalInstance.getAllAccounts();
-      if (accounts.length > 0) {
-        return acquireTokenAndSetUser(accounts[0]);
+      var account = selectedAccount();
+      if (account) {
+        return acquireTokenAndSetUser(account);
       } else {
         // Not signed in — show splash
         document.getElementById('auth-splash').style.display = 'flex';
@@ -558,7 +564,7 @@ function signIn() {
   if (!msalInstance) return;
   document.getElementById('auth-loading').style.display = 'block';
   document.getElementById('auth-signin-btn').style.display = 'none';
-  msalInstance.loginRedirect({ scopes: ['openid', 'profile'] });
+  msalInstance.loginRedirect({ scopes: ['openid', 'profile'], prompt: 'select_account' });
 }
 
 function signOut() {
@@ -568,9 +574,9 @@ function signOut() {
 
 function refreshSession() {
   if (!msalInstance) return;
-  var accounts = msalInstance.getAllAccounts();
-  if (accounts.length > 0) {
-    acquireTokenAndSetUser(accounts[0]).then(function() {
+  var account = selectedAccount();
+  if (account) {
+    acquireTokenAndSetUser(account).then(function() {
       document.getElementById('session-toast').style.display = 'none';
     });
   }
@@ -592,6 +598,7 @@ function renderUserBanner() {
       '<div class="user-email">' + escapeHtml(currentUser.email) + '</div>' +
     '</div>' +
     '<span class="user-role-badge ' + roleClass + '">' + roleLabel + '</span>' +
+    '<button class="user-signout" onclick="signIn()">Switch account</button>' +
     '<button class="user-signout" onclick="signOut()">Sign out</button>';
   banner.style.display = 'flex';
 }
@@ -600,12 +607,12 @@ function startSessionWatch() {
   if (_sessionCheckInterval) clearInterval(_sessionCheckInterval);
   _sessionCheckInterval = setInterval(function() {
     if (!msalInstance) return;
-    var accounts = msalInstance.getAllAccounts();
-    if (accounts.length === 0) return;
+    var account = selectedAccount();
+    if (!account) return;
     // Check if token will expire soon (within 5 minutes)
     msalInstance.acquireTokenSilent({
       scopes: ['openid', 'profile'],
-      account: accounts[0],
+      account: account,
     }).then(function(resp) {
       _accessToken = resp.idToken || resp.accessToken || '';
       var exp = resp.expiresOn ? resp.expiresOn.getTime() : 0;
@@ -806,9 +813,9 @@ function api(path, opts) {
     if (r.status === 401 && !opts._retried) {
       // Token expired or invalid — retry once with fresh token
       if (msalInstance) {
-        var accounts = msalInstance.getAllAccounts();
-        if (accounts.length > 0) {
-          return acquireTokenAndSetUser(accounts[0]).then(function() {
+        var account = selectedAccount();
+        if (account) {
+          return acquireTokenAndSetUser(account).then(function() {
             return api(path, Object.assign({}, opts, { _retried: true }));
           }).catch(function() {
             // Silent refresh failed — force interactive login

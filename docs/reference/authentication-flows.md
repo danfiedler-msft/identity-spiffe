@@ -9,7 +9,7 @@ Both `isp-portal` and `securityportal-mock` use the same model:
 1. Browser loads `/api/auth-config`.
 2. If `auth_required=false`, local development bypasses Entra sign-in.
 3. Otherwise the SPA initializes MSAL with the returned `client_id` and tenant authority.
-4. Sign-in uses redirect flow.
+4. Sign-in uses redirect flow with Entra's account picker (`prompt=select_account`). When multiple accounts are cached, neither portal silently chooses the first; the user chooses on the sign-in splash. A signed-in user can choose **Switch account**. The account returned by the redirect is used for subsequent token requests.
 5. The SPA acquires a token and attaches `Authorization: Bearer <token>` on protected calls.
 6. The backend validates the token and maps group membership to `admin` or `viewer`.
 
