@@ -2597,7 +2597,10 @@ function renderSettings(root) {
   explanation.textContent = 'Entra signal monitoring reads riskyAgents; it does not manufacture safe ratings or populate sidecar evidence. Local risk enforcement uses sidecar evidence and Entra CA blocked levels. Turning it off preserves agent-state, tag, mTLS, RBAC, and JWT checks. Tenant Conditional Access policies and STS enforcement are not changed.';
   card.appendChild(explanation);
   if (!data) {
-    card.appendChild(Object.assign(document.createElement('p'), { textContent: 'Loading risk settings...' }));
+    var loading = document.createElement('p');
+    loading.textContent = state.riskSettingsError || 'Loading risk settings...';
+    if (state.riskSettingsError) loading.style.color = 'var(--red)';
+    card.appendChild(loading);
     root.appendChild(card);
     return;
   }

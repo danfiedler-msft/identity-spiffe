@@ -35,3 +35,18 @@ test('both static demo presets explicitly disable local risk prerequisites', () 
     assert.doesNotMatch(context.PRESET_POLICIES[preset], /blocked_risk_levels/);
   }
 });
+
+test('Settings displays loading failures even before a settings response exists', () => {
+  const node = () => ({ children: [], style: {}, appendChild(child) { this.children.push(child); } });
+  const root = node();
+  const context = {
+    state: { riskSettings: null, riskSettingsError: 'Stored settings could not be read' },
+    document: { createElement: node },
+  };
+  vm.createContext(context);
+  const begin = html.indexOf('function renderSettings(root)');
+  const finish = html.indexOf('\n}', begin) + 2;
+  vm.runInContext(html.slice(begin, finish), context);
+  context.renderSettings(root);
+  assert.ok(root.children[0].children.some(child => child.textContent === context.state.riskSettingsError));
+});

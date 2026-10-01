@@ -86,6 +86,8 @@ The Settings tab separates **Entra signal monitoring** from **local risk enforce
 
 This feature includes a sidecar change; do not deploy it with `--portal-only` until the sidecar has been upgraded through the normal deployment/attestation flow.
 
+For an already-bootstrapped environment where tenant CA policies must remain unchanged, use `SKIP_ENTRA=true ./deploy.sh --skip-provision` to upgrade workloads and re-attest without running Entra provisioning.
+
 `infra/modules/portal-support.bicep` provisions the private runtime settings container inside the environment-owned storage account. `deploy.sh` initializes its blob from `portal/default-risk-settings.json` only if it does not exist; regular and portal-only deployments preserve operator choices. `scripts/teardown.sh` deletes the storage account and settings through `azd down --force --purge`; scoped rebuild deletes the resource group, including settings, before provisioning new defaults. `--skip-azd` performs environment-variable cleanup only and deliberately does not delete live settings.
 
 ## Related Reading

@@ -92,6 +92,7 @@ class PortalContainer:
     async def reload_settings(self):
         # type: () -> None
         refreshed = await type(self).create(self.settings.config_path, self.http_client)
+        refreshed.risk_settings_service._update_lock = self.risk_settings_service._update_lock
         self.__dict__.update(refreshed.__dict__)
 
     async def reload_local_settings(self):
