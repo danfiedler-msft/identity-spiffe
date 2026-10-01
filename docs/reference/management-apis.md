@@ -87,6 +87,13 @@ Key behaviors:
 
 All of those routes are guarded by `X-Spiffe-Admin-Key`.
 
+After a sidecar restart, the in-memory risk store has no trusted entries and
+normal management requests fail closed. The exact `admin-control-plane`
+SPIFFE identity may still call `PUT /mgmt/agent-risk` to establish explicit
+risk evidence. This recovery exception does not apply to any other identity,
+method, or management route, and a disabled control-plane identity remains
+blocked.
+
 ## Contract Guidance
 
 - Public browsers should only talk to the portal or security portal mock.

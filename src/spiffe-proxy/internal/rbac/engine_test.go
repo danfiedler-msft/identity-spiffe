@@ -965,6 +965,32 @@ func TestCA_ControlPlaneBypassesTargetTag(t *testing.T) {
 	}
 }
 
+func TestCA_ControlPlaneCanBootstrapRiskState(t *testing.T) {
+	const caller = "spiffe://aim.microsoft.com/ests/bp/test-bp-oid/aid/admin-control-plane"
+	e := setupCATestEngineWithCAPolicyCache(t, NewRiskStore(), []string{"high"})
+
+	if d := e.Evaluate(caller, "PUT", "/mgmt/agent-risk", ""); d.Action != ActionAllow {
+		t.Fatalf("risk bootstrap must remain reachable with missing risk evidence: %+v", d)
+	}
+	if d := e.Evaluate(caller, "GET", "/mgmt/health", ""); d.Action != ActionDeny ||
+		d.Reason != "agent_risk_unavailable" {
+		t.Fatalf("risk bootstrap exception must not apply to other management requests: %+v", d)
+	}
+	if d := e.Evaluate(caller, "GET", "/mgmt/agent-risk", ""); d.Action != ActionDeny ||
+		d.Reason != "agent_risk_unavailable" {
+		t.Fatalf("risk bootstrap exception must require PUT: %+v", d)
+	}
+}
+
+func TestCA_DisabledControlPlaneCannotBootstrapRiskState(t *testing.T) {
+	const caller = "spiffe://aim.microsoft.com/ests/bp/test-bp-oid/aid/disabled-agent"
+	e := setupCATestEngineWithCAPolicyCache(t, NewRiskStore(), []string{"high"})
+	d := e.Evaluate(caller, "PUT", "/mgmt/agent-risk", "")
+	if d.Action != ActionDeny || d.Reason != "agent_disabled" {
+		t.Fatalf("disabled caller must remain denied: %+v", d)
+	}
+}
+
 func TestCA_RiskClearedAllowed(t *testing.T) {
 	rs := NewRiskStore()
 	// Set risk high, then clear to low

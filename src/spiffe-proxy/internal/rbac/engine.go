@@ -106,7 +106,7 @@ func (e *Engine) Evaluate(spiffeID, method, requestPath, bearerToken string) Dec
 	// Step 2: Layer 4b — Conditional Access (admin governance).
 	// CA evaluation runs BEFORE RBAC rules because admin authority
 	// supersedes developer-defined policies.
-	if caDecision := e.evaluateCA(policy, callerPolicy, spiffeID); caDecision != nil {
+	if caDecision := e.evaluateCA(policy, callerPolicy, spiffeID, method, requestPath); caDecision != nil {
 		return *caDecision
 	}
 
@@ -371,7 +371,7 @@ func (e *Engine) FindCallerPolicy(spiffeID string) *CallerPolicy {
 //  3. Tag check — caller's agent_tag vs target's target_agent_tag
 //
 // Returns nil if CA passes (proceed to RBAC), or a deny Decision if blocked.
-func (e *Engine) evaluateCA(policy *Policy, cp *CallerPolicy, spiffeID string) *Decision {
+func (e *Engine) evaluateCA(policy *Policy, cp *CallerPolicy, spiffeID, method, requestPath string) *Decision {
 	if !policy.AdminGovernance.Enabled {
 		return nil // CA not active, proceed to RBAC
 	}
@@ -387,6 +387,13 @@ func (e *Engine) evaluateCA(policy *Policy, cp *CallerPolicy, spiffeID string) *
 		}
 	}
 
+	// The dedicated control plane must be able to establish trusted risk state
+	// after a sidecar restart, when the in-memory store is empty. This exception
+	// is intentionally limited to the authenticated recovery identity and the
+	// single mutation endpoint; all other requests still require risk evidence.
+	riskBootstrap := cp.Name == "admin-control-plane" &&
+		method == "PUT" && requestPath == "/mgmt/agent-risk"
+
 	// 4b-2: Risk check — CA policy from Entra Graph is the sole source of truth.
 	// No YAML fallback. A configured cache must have observed a valid policy
 	// list; a failed refresh retains the last-known-good list, including empty.
@@ -399,7 +406,7 @@ func (e *Engine) evaluateCA(policy *Policy, cp *CallerPolicy, spiffeID string) *
 				EnforcementLayer: LayerCA, StatusCode: 403,
 			}
 		}
-		if len(blockedLevels) > 0 {
+		if len(blockedLevels) > 0 && !riskBootstrap {
 			risk := RiskUnknown
 			if e.riskStore != nil {
 				risk = e.riskStore.GetRisk(spiffeID)
