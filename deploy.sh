@@ -606,28 +606,38 @@ PY
 
 build_portal_images() {
     local cache_bust_val
+    local build_context
     cache_bust_val=$(date +%s)
+    build_context=$(mktemp -d "${TMPDIR:-/tmp}/identity-spiffe-portal-build.XXXXXX")
+    git archive HEAD portal securityportal-mock src/shared .dockerignore | tar -x -C "$build_context"
 
     echo ""
     echo "🌐 Building portal images..."
     echo "   Building isp-portal:${IMAGE_TAG} (cache-bust=${cache_bust_val})..."
-    az acr build \
+    if ! az acr build \
         --registry "$ACR_NAME" \
         --image "isp-portal:${IMAGE_TAG}" \
         --file portal/Dockerfile \
         --build-arg "CACHE_BUST=${cache_bust_val}" \
         --build-arg "BUILD_VERSION=${IMAGE_TAG}" \
-        .
+        "$build_context"; then
+        rm -rf "$build_context"
+        return 1
+    fi
 
     echo "   Building securityportal-mock:${IMAGE_TAG} (cache-bust=${cache_bust_val})..."
-    az acr build \
+    if ! az acr build \
         --registry "$ACR_NAME" \
         --image "securityportal-mock:${IMAGE_TAG}" \
         --file securityportal-mock/Dockerfile \
         --build-arg "CACHE_BUST=${cache_bust_val}" \
         --build-arg "BUILD_VERSION=${IMAGE_TAG}" \
-        .
+        "$build_context"; then
+        rm -rf "$build_context"
+        return 1
+    fi
 
+    rm -rf "$build_context"
     echo "✅ Portal images built"
 }
 
