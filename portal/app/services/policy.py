@@ -254,7 +254,6 @@ class PolicyService:
                 "ca": {
                     "agent_state": "enabled",
                     "agent_tag": "Finance",
-                    "blocked_risk_levels": ["high"],
                 },
                 "rules": [
                     {"path": "/budget/read", "methods": ["GET", "POST"], "action": "allow", "require_jwt": True, "required_roles": ["Budget.Read"]},
@@ -276,7 +275,6 @@ class PolicyService:
                 "ca": {
                     "agent_state": "enabled",
                     "agent_tag": "HR",
-                    "blocked_risk_levels": ["high"],
                 },
                 "rules": [{"path": "/*", "methods": ["*"], "action": "deny"}],
             },
@@ -286,7 +284,6 @@ class PolicyService:
                 "ca": {
                     "agent_state": "enabled",
                     "agent_tag": "Finance",
-                    "blocked_risk_levels": ["high"],
                 },
                 "rules": [
                     {"path": "/budget/read", "methods": ["GET", "POST"], "action": "allow", "require_jwt": True, "required_roles": ["Budget.Read"]},
@@ -299,7 +296,6 @@ class PolicyService:
                 "ca": {
                     "agent_state": "enabled",
                     "agent_tag": "Operations",
-                    "blocked_risk_levels": ["high"],
                     "skip_target_tag_check": True,
                 },
                 "rules": [{"path": "/mgmt/*", "methods": ["GET", "PUT"], "action": "allow"}],
@@ -338,7 +334,7 @@ class PolicyService:
             "admin_governance": {
                 "enabled": True,
                 "target_agent_tag": "finance",
-                "risk_enforcement": "sts",
+                "risk_enforcement": "off",
             },
             "policies": [],
             "federated_policies": [],
@@ -373,7 +369,7 @@ class PolicyService:
             "admin_governance": {
                 "enabled": True,
                 "target_agent_tag": "finance",
-                "risk_enforcement": "sts",
+                "risk_enforcement": "off",
             },
             "policies": [],
             "federated_policies": [],
@@ -405,6 +401,7 @@ class PolicyService:
             "version": current_policy.get("version", "4.0"),
             "trust_domain": current_policy.get("trust_domain", self.settings.trust_domain),
             "default_action": "deny",
+            "admin_governance": dict(current_policy.get("admin_governance", {})),
             "policies": list(current_policy.get("policies", [])),
         }
         for spec in self.desired_agent_specs():
@@ -492,7 +489,7 @@ class PolicyService:
         allowed.append(control_plane_id)
         return list(dict.fromkeys(allowed))
 
-    async def apply_preset(self, preset_name, request_id):
+    async def apply_preset(self, preset_name, request_id, risk_enforcement_enabled=False):
         # type: (str, str) -> Dict[str, Any]
         if preset_name == "hardened":
             preset_yaml = self.build_hardened_rbac_yaml()
@@ -501,7 +498,16 @@ class PolicyService:
         else:
             raise PortalError(404, "preset_not_found", "Unknown built-in policy preset")
 
+        preset_doc = yaml.safe_load(preset_yaml)
+        preset_doc["admin_governance"]["risk_enforcement"] = "data_plane" if risk_enforcement_enabled else "off"
+        preset_yaml = yaml.safe_dump(preset_doc, sort_keys=False)
         target_mtls_ids = self.preset_mtls_ids(preset_name)
+        health = await self.admin_client.get_json("health", request_id)
+        if not health.get("risk_enforcement_control_supported"):
+            raise PortalError(
+                409, "sidecar_upgrade_required",
+                "Demo presets require the updated spiffe-proxy risk enforcement control",
+            )
         previous_policy = await self.get_policy(request_id)
         policy_result = await self.put_policy(preset_yaml, request_id)
         try:

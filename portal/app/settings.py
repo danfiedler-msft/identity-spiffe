@@ -95,6 +95,8 @@ class PortalSettings:
     policy_store_account_url: str = ""
     policy_store_container: str = ""
     policy_store_blob: str = ""
+    runtime_settings_container: str = "portal-runtime-settings"
+    runtime_settings_blob: str = "settings.json"
     azure_client_id: str = ""
     applicationinsights_connection_string: str = ""
     # External (cross-cloud / federated) agent store
@@ -268,6 +270,8 @@ async def load_settings(config_path):
             policy_store_account_url=policy_store_account_url,
             policy_store_container=policy_store_container,
             policy_store_blob=policy_store_blob,
+            runtime_settings_container=os.getenv("RUNTIME_SETTINGS_BLOB_CONTAINER", "portal-runtime-settings"),
+            runtime_settings_blob=os.getenv("RUNTIME_SETTINGS_BLOB_NAME", "settings.json"),
             azure_client_id=azure_client_id,
             applicationinsights_connection_string=appinsights_connection_string,
             external_agent_store_provider=ext_store_provider,

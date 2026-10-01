@@ -48,7 +48,8 @@ type Rule struct {
 // This is Layer 4 — admin authority that supersedes developer policies.
 // Maps to Entra Conditional Access constructs:
 //   - target_agent_tag → Custom security attribute on the resource (this agent)
-//   - risk_enforcement → Where risk is checked ("sts", "data_plane", or "sts_and_data_plane")
+//   - risk_enforcement → "off" explicitly disables only local risk checks;
+//     all other values preserve risk enforcement.
 type AdminGovernance struct {
 	Enabled         bool   `yaml:"enabled"            json:"enabled"`
 	TargetAgentTag  string `yaml:"target_agent_tag"   json:"target_agent_tag"`

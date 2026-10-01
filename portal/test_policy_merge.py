@@ -60,6 +60,15 @@ class TestPolicyMerge(unittest.TestCase):
         self.assertTrue(submit_rule["require_jwt"])
         self.assertEqual(submit_rule["required_roles"], ["Budget.Submit"])
 
+    def test_demo_presets_do_not_require_risk_evidence(self):
+        service = _make_service()
+        for build in (service.build_hardened_rbac_yaml, service.build_permissive_rbac_yaml):
+            policy = yaml.safe_load(build())
+            self.assertEqual(policy["admin_governance"]["risk_enforcement"], "off")
+            self.assertTrue(policy["admin_governance"]["enabled"])
+            for entry in policy["policies"]:
+                self.assertNotIn("blocked_risk_levels", entry.get("ca", {}))
+
     def test_presets_put_foreign_agents_in_federated_policies(self):
         service = _make_service()
         service.settings.agents["google-budget-reader"] = AgentConfig(

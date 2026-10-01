@@ -423,6 +423,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text-0); mi
     </div>
   </div>
   <div class="sidebar-mode live" id="status-dot">LIVE STATUS</div>
+  <div class="sidebar-mode degraded" id="risk-signal-status">AGENT RISK SIGNAL UNKNOWN</div>
   <div class="audit-stream-status closed" id="audit-stream-status" title="Live audit stream">
     <span class="asd-dot"></span><span class="asd-label">Live logs idle</span>
   </div>
@@ -436,6 +437,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text-0); mi
   <button class="nav-btn" data-tab="policy"><span class="nav-icon">&#x1f4dc;</span> Policy Editor</button>
   <button class="nav-btn" data-tab="health"><span class="nav-icon">&#x1f49a;</span> System Health</button>
   <button class="nav-btn" data-tab="oauth"><span class="nav-icon">&#x1f517;</span> Enforcement Layers</button>
+  <button class="nav-btn" data-tab="settings"><span class="nav-icon">&#9881;</span> Settings</button>
   <div class="sidebar-spacer"></div>
 </aside>
 
@@ -654,7 +656,32 @@ function updateStatusBadge() {
   dot.textContent = 'LIVE HEALTHY';
 }
 
+function updateRiskSignalBadge() {
+  var badge = document.getElementById('risk-signal-status');
+  var signal = state.riskSettings && state.riskSettings.signal;
+  if (!badge) return;
+  var status = signal ? signal.status : 'unknown';
+  badge.className = 'sidebar-mode ' + (status === 'on' ? 'live' : 'degraded');
+  badge.textContent = 'AGENT RISK SIGNAL ' + status.toUpperCase();
+  badge.title = signal ? signal.detail : 'Risk signal status has not been checked';
+}
+
+function loadRiskSettings() {
+  return api('/settings/risk').then(function(data) {
+    state.riskSettings = data;
+    updateRiskSignalBadge();
+  }).catch(function(err) {
+    state.riskSettings = {
+      signal: { status: 'unavailable', detail: err.message },
+      risk_enforcement_enabled: null,
+    };
+    updateRiskSignalBadge();
+    throw err;
+  });
+}
+
 function updateHealthDots() {
+  loadRiskSettings().catch(function(err) { console.warn('Risk settings unavailable:', err.message); });
   api('/system-status').then(function(data) {
     state.systemStatus = data;
     updateStatusBadge();
@@ -750,6 +777,8 @@ var state = {
   systemStatus: null,
   // OAuth
   oauthStatus: null,
+  riskSettings: null,
+  riskSettingsError: null,
   caData: null,
   // CA Admin Governance
   caGovData: null,
@@ -802,6 +831,7 @@ var PAGE_META = {
   health:   { title: 'System Health',        sub: 'Gateway status & server management' },
   oauth:    { title: 'Enforcement Layers',   sub: 'All four enforcement layers at a glance' },
   logs:     { title: 'Logs',                 sub: 'Live authorization decisions across all agents' },
+  settings: { title: 'Settings',             sub: 'Risk signals and local risk enforcement' },
 };
 
 /* ── API helpers ── */
@@ -1007,7 +1037,7 @@ var PRESET_POLICIES = {
     'admin_governance:\n' +
     '  enabled: true\n' +
     '  target_agent_tag: "finance"\n' +
-    '  risk_enforcement: "sts"\n' +
+    '  risk_enforcement: "off"\n' +
     'policies:\n' +
     '  - spiffe_id_prefix: "spiffe://aim.microsoft.com/ests/bp/"\n' +
     '    name: "budget-report"\n' +
@@ -1015,7 +1045,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "Finance"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '    rules:\n' +
     '      - path: "/budget/read"\n' +
     '        methods: ["GET", "POST"]\n' +
@@ -1031,7 +1060,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "HR"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '    rules:\n' +
     '      - path: "/*"\n' +
     '        methods: ["*"]\n' +
@@ -1042,7 +1070,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "Finance"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '    rules:\n' +
     '      - path: "/budget/read"\n' +
     '        methods: ["GET", "POST"]\n' +
@@ -1060,7 +1087,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "Operations"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '      skip_target_tag_check: true\n' +
     '    rules:\n' +
     '      - path: "/mgmt/*"\n' +
@@ -1073,7 +1099,7 @@ var PRESET_POLICIES = {
     'admin_governance:\n' +
     '  enabled: true\n' +
     '  target_agent_tag: "finance"\n' +
-    '  risk_enforcement: "sts"\n' +
+    '  risk_enforcement: "off"\n' +
     'policies:\n' +
     '  - spiffe_id_prefix: "spiffe://aim.microsoft.com/ests/bp/"\n' +
     '    name: "budget-report"\n' +
@@ -1081,7 +1107,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "Finance"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '    rules:\n' +
     '      - path: "/budget/read"\n' +
     '        methods: ["GET", "POST"]\n' +
@@ -1095,7 +1120,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "HR"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '    rules:\n' +
     '      - path: "/*"\n' +
     '        methods: ["*"]\n' +
@@ -1106,7 +1130,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "Finance"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '    rules:\n' +
     '      - path: "/budget/read"\n' +
     '        methods: ["GET", "POST"]\n' +
@@ -1120,7 +1143,6 @@ var PRESET_POLICIES = {
     '    ca:\n' +
     '      agent_state: enabled\n' +
     '      agent_tag: "Operations"\n' +
-    '      blocked_risk_levels: ["high"]\n' +
     '      skip_target_tag_check: true\n' +
     '    rules:\n' +
     '      - path: "/mgmt/*"\n' +
@@ -2563,7 +2585,55 @@ function render() {
     case 'health':   renderHealth(content);   break;
     case 'oauth':    renderOAuth(content);    break;
     case 'logs':     renderLogs(content);     break;
+    case 'settings': renderSettings(content); break;
   }
+}
+
+function renderSettings(root) {
+  var data = state.riskSettings;
+  var card = document.createElement('div'); card.className = 'card';
+  var heading = document.createElement('h3'); heading.textContent = 'Agent risk settings'; card.appendChild(heading);
+  var explanation = document.createElement('p');
+  explanation.textContent = 'Entra signal monitoring reads riskyAgents; it does not manufacture safe ratings or populate sidecar evidence. Local risk enforcement uses sidecar evidence and Entra CA blocked levels. Turning it off preserves agent-state, tag, mTLS, RBAC, and JWT checks. Tenant Conditional Access policies and STS enforcement are not changed.';
+  card.appendChild(explanation);
+  if (!data) {
+    card.appendChild(Object.assign(document.createElement('p'), { textContent: 'Loading risk settings...' }));
+    root.appendChild(card);
+    return;
+  }
+  var signal = data.signal || {};
+  card.appendChild(Object.assign(document.createElement('p'), {
+    textContent: 'Entra risk signal: ' + (signal.status || 'unknown') + ' — ' + (signal.detail || ''),
+  }));
+  if (state.riskSettingsError) {
+    var error = document.createElement('p'); error.style.color = 'var(--red)';
+    error.textContent = state.riskSettingsError; card.appendChild(error);
+  }
+  [
+    { label: 'Read Entra agent risk signals', enabled: signal.enabled, path: '/settings/risk-signal' },
+    { label: 'Enforce risk evidence in the sidecar', enabled: data.risk_enforcement_enabled, path: '/settings/risk-enforcement', unsupported: !data.enforcement_control_supported },
+  ].forEach(function(setting) {
+    var row = document.createElement('p');
+    var label = document.createElement('label');
+    var checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+    checkbox.checked = setting.enabled === true;
+    checkbox.disabled = !currentUser || currentUser.role !== 'admin' || typeof setting.enabled !== 'boolean' || setting.unsupported;
+    checkbox.onchange = function() {
+      var enabled = checkbox.checked;
+      if (!enabled && !confirm('Turn off ' + setting.label.toLowerCase() + '? This explicitly reduces risk monitoring or protection.')) {
+        checkbox.checked = true; return;
+      }
+      checkbox.disabled = true;
+      state.riskSettingsError = null;
+      api(setting.path, { method: 'PUT', body: JSON.stringify({ enabled: enabled }) })
+        .then(function() { return Promise.all([loadRiskSettings(), loadPolicy()]); })
+        .catch(function(err) { state.riskSettingsError = err.message; })
+        .finally(render);
+    };
+    label.appendChild(checkbox); label.appendChild(document.createTextNode(' ' + setting.label));
+    row.appendChild(label); card.appendChild(row);
+  });
+  root.appendChild(card);
 }
 
 /* ═══════════ OVERVIEW TAB ═══════════ */
@@ -3661,23 +3731,9 @@ function renderPolicy(root) {
           cp.ca.agent_tag = match.graph_tag;
           policyEnriched = true;
         }
-        // Overlay blocked_risk_levels from CA governance if not set in YAML
-        if ((!cp.ca.blocked_risk_levels || cp.ca.blocked_risk_levels.length === 0) && match.blocked_risk_levels && match.blocked_risk_levels.length > 0) {
-          cp.ca.blocked_risk_levels = match.blocked_risk_levels;
-          policyEnriched = true;
-        }
       }
     });
-    // Fix risk_enforcement: if CA policies exist in Entra, enforcement is at STS
     var riskEnforcementNote = '';
-    if (displayPolicy.admin_governance && gov.enabled) {
-      var hasCaPolicies = state.caData && ((state.caData.policies || state.caData.agent_policies || []).length > 0);
-      if (hasCaPolicies && displayPolicy.admin_governance.risk_enforcement !== 'sts') {
-        displayPolicy.admin_governance.risk_enforcement = 'sts';
-        policyEnriched = true;
-        riskEnforcementNote = 'risk_enforcement updated: Entra CA policies enforce at STS (token issuance)';
-      }
-    }
   }
   var activeYaml = displayPolicy ? policyToYaml(displayPolicy) : 'Loading...';
 
@@ -3688,7 +3744,7 @@ function renderPolicy(root) {
   if (policyEnriched) {
     var enrichNote = document.createElement('div');
     enrichNote.style.cssText = 'font-size:11px;color:var(--blue);margin-bottom:8px;font-style:italic';
-    enrichNote.textContent = 'Tags and risk levels updated from Entra Graph API. Push to sidecar to persist.';
+    enrichNote.textContent = 'Tags updated from Entra Graph API. Push to sidecar to persist.';
     lc.appendChild(enrichNote);
     if (riskEnforcementNote) {
       var riskNote = document.createElement('div');
@@ -4451,6 +4507,7 @@ document.querySelectorAll('.nav-btn').forEach(function(btn) {
     if (tab === 'mtls' && !state.mtlsData) loadMtls().then(render);
     if (tab === 'oauth' && !state.oauthStatus) loadOAuthStatus().then(render);
     if (tab === 'oauth' && !state.caGovData) api('/ca-status').then(function(d) { state.caGovData = d; render(); });
+    if (tab === 'settings') loadRiskSettings().then(render).catch(render);
     render();
     updateAuditStreamLifecycle();
   });

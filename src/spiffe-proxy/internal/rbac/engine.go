@@ -397,7 +397,7 @@ func (e *Engine) evaluateCA(policy *Policy, cp *CallerPolicy, spiffeID, method, 
 	// 4b-2: Risk check — CA policy from Entra Graph is the sole source of truth.
 	// No YAML fallback. A configured cache must have observed a valid policy
 	// list; a failed refresh retains the last-known-good list, including empty.
-	if e.caPolicyCache != nil {
+	if e.caPolicyCache != nil && policy.AdminGovernance.RiskEnforcement != "off" {
 		blockedLevels, ready := e.caPolicyCache.GetRiskPolicy()
 		if !ready {
 			log.Printf("[CA] Policy unavailable: %s", spiffeID)

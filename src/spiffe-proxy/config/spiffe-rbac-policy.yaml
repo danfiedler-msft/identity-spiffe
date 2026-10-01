@@ -19,7 +19,8 @@
 #   admin_governance.target_agent_tag: this agent's custom attribute tag
 #   ca.agent_state: admin kill switch (enabled/disabled)
 #   ca.agent_tag: caller's custom attribute tag (must match target's tag)
-#   Risk enforcement is driven by Entra CA policy (agentIdRiskLevels), not YAML.
+#   When enabled, risk blocking uses Entra CA policy (agentIdRiskLevels).
+#   Demo defaults explicitly disable local risk enforcement.
 #   Risk levels pushed via PUT /agent-risk on mgmt API (port 9443)
 #
 # In production, Layer 4a (token-time CA) blocks at Entra STS before token
@@ -34,12 +35,12 @@ default_action: deny
 admin_governance:
   enabled: true
   target_agent_tag: finance            # BudgetBackend is a "finance" resource
-  risk_enforcement: sts                # Entra CA enforces at token issuance (STS)
+  risk_enforcement: "off"              # Explicit demo default; other CA checks remain active
 
 policies:
   # ─── BudgetReport: Read-only + finance tag ───
   # Authenticated caller with valid SPIFFE identity.
-  # CA: finance tag matches → allowed. High risk → blocked.
+  # CA: finance tag matches → allowed; risk checks require explicit enablement.
   # /budget/read: RBAC allows + JWT requires Budget.Read
   # /budget/submit: RBAC denies outright (Layer 2 block)
   - spiffe_id_prefix: "spiffe://aim.microsoft.com/ests/bp/"

@@ -216,10 +216,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	health := map[string]interface{}{
-		"status":           "healthy",
-		"policy_version":   s.store.Version(),
-		"policy_loaded_at": s.store.LoadedAt().Format(time.RFC3339),
-		"uptime_seconds":   int(time.Since(s.startTime).Seconds()),
+		"status":                             "healthy",
+		"risk_enforcement_control_supported": true,
+		"policy_version":                     s.store.Version(),
+		"policy_loaded_at":                   s.store.LoadedAt().Format(time.RFC3339),
+		"uptime_seconds":                     int(time.Since(s.startTime).Seconds()),
 	}
 
 	// SVID info if identity is available.

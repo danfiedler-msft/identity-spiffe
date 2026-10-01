@@ -71,6 +71,23 @@ The portal Container App managed identity must have Blob data permissions on the
 - Graph failures are surfaced as real errors, not fabricated healthy state
 - cloud startup should fail fast when required runtime configuration is missing
 
+## Risk Settings
+
+The Settings tab separates **Entra signal monitoring** from **local risk enforcement**:
+
+- Signal monitoring defaults to On and reads Graph `identityProtection/riskyAgents`. The sidebar below LIVE HEALTHY reports On only after a successful read, Off after an explicit opt-out, and Unavailable on licensing, authorization, or network failures. Successful empty responses do not establish low risk for absent agents.
+- Both preferences are stored separately from named policy presets in `portal-runtime-settings/settings.json` using the existing managed identity, or the equivalent local file. Invalid or unreadable stored settings produce an error, not a silent fallback. The settings API reconciles the active sidecar risk mode to the saved preference after restart.
+- Local enforcement is controlled by `admin_governance.risk_enforcement` in the active sidecar policy. Only the explicit value `off` skips local risk checks. Missing or other values retain existing fail-closed checks. Agent-disabled, tag, mTLS, RBAC, and JWT controls remain independent.
+- Enabling local enforcement requires a ready CA cache and permitted control-plane risk evidence to prevent immediate management lockout; it does not initialize or assume safe evidence for workload agents.
+- Both built-in demo presets and the shipped demo policy default to `off` and omit the deprecated per-caller blocked risk levels. Hydrated presets respect an operator's persisted enforcement setting. This does not alter live tenant CA policies or token-issuance enforcement.
+- Signal monitoring is observational: it does not automatically populate the sidecar risk store. Enabling local risk enforcement still requires explicit evidence in that store. Durable sidecar risk evidence and restart recovery remain tracked in #48.
+
+`GET /api/settings/risk` is viewer/admin readable. `PUT /api/settings/risk-signal` and `PUT /api/settings/risk-enforcement` require administrator authorization and accept `{"enabled": true}` or `{"enabled": false}`. Enforcement updates and coordinated demo preset application require an upgraded sidecar advertising `risk_enforcement_control_supported` in management health.
+
+This feature includes a sidecar change; do not deploy it with `--portal-only` until the sidecar has been upgraded through the normal deployment/attestation flow.
+
+`infra/modules/portal-support.bicep` provisions the private runtime settings container inside the environment-owned storage account. `deploy.sh` initializes its blob from `portal/default-risk-settings.json` only if it does not exist; regular and portal-only deployments preserve operator choices. `scripts/teardown.sh` deletes the storage account and settings through `azd down --force --purge`; scoped rebuild deletes the resource group, including settings, before provisioning new defaults. `--skip-azd` performs environment-variable cleanup only and deliberately does not delete live settings.
+
 ## Related Reading
 
 - [Portal Cloud Deployment](../architecture/portal-cloud-deployment.md)

@@ -879,6 +879,32 @@ func TestCA_TagMatch_Allowed(t *testing.T) {
 	if d.Action != ActionAllow {
 		t.Errorf("expected ALLOW (tag match), got %s (reason: %s, layer: %s)", d.Action, d.Reason, d.EnforcementLayer)
 	}
+
+}
+
+func TestCA_RiskEnforcementOffPreservesOtherChecks(t *testing.T) {
+	e := setupCATestEngineWithCAPolicyCache(t, NewRiskStore(), []string{"high"})
+	data := strings.Replace(testCAPolicyYAML, "risk_enforcement: sts", "risk_enforcement: off", 1)
+	if err := e.store.LoadFromBytes([]byte(data)); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		caller string
+		reason string
+	}{
+		{"budget-report", ""},
+		{"employee-menus", "agent_tag_mismatch"},
+		{"disabled-agent", "agent_disabled"},
+	} {
+		d := e.Evaluate("spiffe://aim.microsoft.com/ests/bp/test-bp-oid/aid/"+tt.caller, "GET", "/budget/read", "")
+		if tt.reason == "" {
+			if d.Action != ActionAllow {
+				t.Fatalf("risk off should allow missing risk with valid tag: %+v", d)
+			}
+		} else if d.Action != ActionDeny || d.Reason != tt.reason {
+			t.Fatalf("risk off must preserve %s: %+v", tt.reason, d)
+		}
+	}
 }
 
 func TestCA_TagMismatch_Denied(t *testing.T) {

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 
 class HttpMethod(str, Enum):
@@ -38,6 +38,10 @@ class ExecuteA2ARequest(BaseModel):
 
 class MTLSPolicyUpdate(BaseModel):
     allowed_ids: List[str]
+
+
+class RiskSettingUpdate(BaseModel):
+    enabled: StrictBool
 
 
 class PolicyConfigCreate(BaseModel):

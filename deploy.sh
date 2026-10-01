@@ -2264,8 +2264,16 @@ if [ -n "$PORTAL_AUTH_CLIENT_ID" ] || [ -n "$ADMIN_CP_URL" ]; then
     # Derive storage account name from resource group
     STORAGE_ACCOUNT=$(az storage account list --resource-group "$RG" --query "[0].name" -o tsv 2>/dev/null)
     if [ -z "$STORAGE_ACCOUNT" ]; then
-        echo "   ⚠️  Storage account not found; blob-backed stores will not be configured"
+        echo "ERROR: Storage account not found; durable portal settings are required." >&2
+        exit 1
     fi
+    source "${SCRIPT_DIR}/scripts/lib/portal-settings.sh"
+    RUNTIME_SETTINGS_CONTAINER=$(azd_env_get_from_blob "$AZD_VALUES" "PORTAL_RUNTIME_SETTINGS_CONTAINER")
+    RUNTIME_SETTINGS_CONTAINER="${RUNTIME_SETTINGS_CONTAINER:-portal-runtime-settings}"
+    RUNTIME_SETTINGS_BLOB=$(azd_env_get_from_blob "$AZD_VALUES" "PORTAL_RUNTIME_SETTINGS_BLOB_NAME")
+    RUNTIME_SETTINGS_BLOB="${RUNTIME_SETTINGS_BLOB:-settings.json}"
+    ensure_portal_settings_blob "$STORAGE_ACCOUNT" "$RUNTIME_SETTINGS_CONTAINER" \
+        "$RUNTIME_SETTINGS_BLOB" "${REPO_ROOT}/portal/default-risk-settings.json"
 
     portal_env_vars=(
         "ADMIN_CP_URL=${ADMIN_CP_URL}"
@@ -2284,6 +2292,8 @@ if [ -n "$PORTAL_AUTH_CLIENT_ID" ] || [ -n "$ADMIN_CP_URL" ]; then
             "POLICY_CONFIG_BLOB_ACCOUNT_URL=https://${STORAGE_ACCOUNT}.blob.core.windows.net/"
             "POLICY_CONFIG_BLOB_CONTAINER=portal-policy-configs"
             "POLICY_CONFIG_BLOB_NAME=policy-configs.json"
+            "RUNTIME_SETTINGS_BLOB_CONTAINER=${RUNTIME_SETTINGS_CONTAINER}"
+            "RUNTIME_SETTINGS_BLOB_NAME=${RUNTIME_SETTINGS_BLOB}"
             "EXTERNAL_AGENT_STORE_PROVIDER=blob"
             "EXTERNAL_AGENT_STORE_BLOB_ACCOUNT_URL=https://${STORAGE_ACCOUNT}.blob.core.windows.net/"
             "EXTERNAL_AGENT_STORE_BLOB_CONTAINER=portal-external-agents"
