@@ -827,7 +827,16 @@ function api(path, opts) {
     }
     if (!r.ok) {
       return r.json().catch(function() { return { detail: r.statusText }; }).then(function(body) {
-        var err = new Error(body.detail || body.error || 'Request failed (' + r.status + ')');
+        var detail = body.detail || body.error || 'Request failed (' + r.status + ')';
+        if (body.meta && body.meta.body) {
+          var downstream = body.meta.body;
+          try {
+            var parsed = JSON.parse(downstream);
+            downstream = parsed.error || parsed.detail || downstream;
+          } catch (_) {}
+          detail += ': ' + downstream;
+        }
+        var err = new Error(detail);
         err.status = r.status;
         throw err;
       });

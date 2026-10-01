@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -317,6 +318,17 @@ class PolicyService:
             )
         return specs
 
+    def append_identity_policy(self, policy, entry, spiffe_id):
+        # type: (Dict[str, Any], Dict[str, Any], str) -> None
+        trust_domain = urlsplit(spiffe_id).netloc
+        if trust_domain == self.settings.trust_domain:
+            entry["spiffe_id_prefix"] = spiffe_id
+            policy["policies"].append(entry)
+            return
+        entry["spiffe_id"] = spiffe_id
+        entry["trust_domain"] = trust_domain
+        policy.setdefault("federated_policies", []).append(entry)
+
     def build_permissive_rbac_yaml(self):
         # type: () -> str
         policy = {
@@ -329,11 +341,11 @@ class PolicyService:
                 "risk_enforcement": "sts",
             },
             "policies": [],
+            "federated_policies": [],
         }
         for spec in self.desired_agent_specs():
             spiffe_id = self.get_agent_spiffe_id(spec["name"])
             entry = {
-                "spiffe_id_prefix": spiffe_id,
                 "name": spec["name"],
                 "description": spec.get("description", spec["name"]),
             }
@@ -358,7 +370,7 @@ class PolicyService:
                 if required_roles:
                     yaml_rule["required_roles"] = required_roles
                 entry["rules"].append(yaml_rule)
-            policy["policies"].append(entry)
+            self.append_identity_policy(policy, entry, spiffe_id)
         return yaml.safe_dump(policy, sort_keys=False, default_flow_style=False, indent=2)
 
     def build_hardened_rbac_yaml(self):
@@ -373,11 +385,11 @@ class PolicyService:
                 "risk_enforcement": "sts",
             },
             "policies": [],
+            "federated_policies": [],
         }
         for spec in self.desired_agent_specs():
             spiffe_id = self.get_agent_spiffe_id(spec["name"])
             entry = {
-                "spiffe_id_prefix": spiffe_id,
                 "name": spec["name"],
                 "description": spec["description"],
             }
@@ -393,7 +405,7 @@ class PolicyService:
                 if rule.get("required_roles"):
                     yaml_rule["required_roles"] = rule["required_roles"]
                 entry["rules"].append(yaml_rule)
-            policy["policies"].append(entry)
+            self.append_identity_policy(policy, entry, spiffe_id)
         return yaml.safe_dump(policy, sort_keys=False, default_flow_style=False, indent=2)
 
     def harden_policy_additive(self, current_policy):

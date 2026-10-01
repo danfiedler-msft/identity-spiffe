@@ -6,7 +6,7 @@ import unittest
 import yaml
 
 from portal.app.services.policy import PolicyService
-from portal.app.settings import ControlPlaneConfig, PortalSettings
+from portal.app.settings import AgentConfig, ControlPlaneConfig, PortalSettings
 
 
 def _make_service():
@@ -38,6 +38,38 @@ class TestPolicyMerge(unittest.TestCase):
         self.assertEqual(submit_rule.get("action"), "allow")
         self.assertTrue(submit_rule.get("require_jwt"))
         self.assertEqual(submit_rule.get("required_roles"), ["Budget.Submit"])
+
+    def test_presets_put_foreign_agents_in_federated_policies(self):
+        service = _make_service()
+        service.settings.agents["google-budget-reader"] = AgentConfig(
+            key="google-budget-reader",
+            name="GoogleBudgetReader",
+            role="federated-caller",
+            url="",
+            spiffe_id="spiffe://gcp.aim.microsoft.com/ests/bp/google/aid/reader",
+            entra_agent_id="reader",
+            hosting_platform="gcp",
+        )
+
+        for yaml_text in (
+            service.build_hardened_rbac_yaml(),
+            service.build_permissive_rbac_yaml(),
+        ):
+            policy = yaml.safe_load(yaml_text)
+            self.assertFalse(
+                any(entry.get("name") == "google-budget-reader" for entry in policy["policies"])
+            )
+            google = next(
+                entry
+                for entry in policy["federated_policies"]
+                if entry.get("name") == "google-budget-reader"
+            )
+            self.assertEqual(google["trust_domain"], "gcp.aim.microsoft.com")
+            self.assertEqual(
+                google["spiffe_id"],
+                "spiffe://gcp.aim.microsoft.com/ests/bp/google/aid/reader",
+            )
+            self.assertNotIn("spiffe_id_prefix", google)
 
     def test_merge_rules_drops_overlapping_broad_allow(self):
         service = _make_service()
