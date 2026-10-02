@@ -47,6 +47,13 @@ That split keeps the governance model reusable while isolating the actual govern
 - `agent_state` enabled or disabled
 - sync from Microsoft Graph into the local policy and risk views
 
+Tag evidence is held in the sidecar's in-memory `TagStore`. After a full gateway
+rollout or restart, use the administrator-only `POST /api/sync-attributes` to
+rehydrate `AgentIdentity.Department` from Graph before verifying governed calls.
+Missing tag evidence correctly produces `agent_tag_mismatch`, even when risk
+enforcement is Off. Do not disable tag governance or invent a matching tag to
+work around unavailable evidence.
+
 ## Why Layer 4 Is Separate
 
 Layers 1 to 3 express what the application owner intended. Layer 4 expresses what the enterprise currently allows. In regulated environments those are different authorities and both must exist.
